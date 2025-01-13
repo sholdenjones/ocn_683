@@ -1,0 +1,8 @@
+---
+title: "hwk_1"
+author: "Holden Jones"
+date: "2025-01-13"
+output: html_document
+---
+
+test git directory establishment
