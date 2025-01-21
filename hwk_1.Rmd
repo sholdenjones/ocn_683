@@ -5,4 +5,75 @@ date: "2025-01-13"
 output: html_document
 ---
 
-test git directory establishment
+setup
+```{r}
+library(tidyverse)
+bird_data <- read_csv('data/foraging.height.edit.csv')
+```
+
+# 1. 
+Start with some data exploration. 
+
+How many observations are there of each bird species in each experimental treatment? 
+```{r}
+bird_data %>%
+  group_by(SPECIES, Rat_Removal) %>%
+  summarize(count = n())
+```
+
+Make a boxplot or violinplot to show the distribution of foraging heights of each bird species in each experimental treatment. 
+```{r}
+ggplot(bird_data, aes(Rat_Removal, foraging.ht.m, 
+                 fill = SPECIES)) +
+  geom_violin()
+```
+
+What have you learned so far?
+- Lots of variation in the number of observations for each species, but they are closely split 50/50
+  across treated / untreated sites.
+- Seems to be more variation in foraging height for most species in the treated sites. They forage at
+  lower heights in the treated sites.
+
+# 2.
+
+Now make a plot showing the mean foraging height of each bird species in each
+treatment, and include error bars displaying +/- one standard error of the mean.
+```{r}
+ggplot(bird_data, aes(Rat_Removal, foraging.ht.m, 
+                 fill = SPECIES)) +
+  geom_boxplot()
+```
+
+What is the meaning of the standard error of the mean? How does this plot differ
+from the plot in #1? 
+- Standard Error of the Mean incorporates variation within a sample and sample size to show how likely the observed sample mean is to be within the true population mean
+- This plot incorporates standard error with error bars which contain the true mean with 95% confidence
+
+# 3.
+Fit a linear model that tests whether the bird species differ in foraging height,
+whether the rat removal treatment affects foraging height, and whether the effect of
+the rat removal differs between the bird species. 
+```{r}
+height_model <- lm(foraging.ht.m ~ SPECIES + Rat_Removal + Rat_Removal*SPECIES , 
+            data = bird_data)
+
+summary(height_model)
+```
+
+Make plots to assess the distribution of the residuals. 
+```{r}
+par(mfrow = c(2, 2))
+plot(height_model)
+```
+
+Report F-tests for the terms of the model. 
+
+Create an effects plot displaying the fitted effects. 
+
+How do you interpret the results? What are the magnitudes of the effects? 
+
+
+
+
+
+
