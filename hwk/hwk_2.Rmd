@@ -154,7 +154,7 @@ custom_contrast <- contrast(nut_emmeans, method = list(
 custom_contrast
 ```
 
-- yes, G has a significantly higher species richness than A when aceraging
+- yes, G has a significantly higher species richness than A when averaging
   across nutrient level and block treatments
 
 #7.
@@ -173,7 +173,8 @@ interaction_contrast
 ```
 
 - it looks like the difference between G and A is larger in the low nutrient
-  than the high nutrient treatment, although this difference is pretty small (.7)
+  than the high nutrient treatment, although this difference is pretty small (.7).
+  It is a significant difference in both treatments.
 
 #8.
 How do you interpret these results?
@@ -189,10 +190,76 @@ because we think that adding a predator of the grazers may mean that grazers hav
 a weaker effect on phytoplankton diversity, and that this trophic cascade may be 
 more important under high nutrient supply. 
 
+Now define contrasts to test (1) whether G is different from P in the H 
+treatment, (2) whether G is different from P in the L treatment.
+```{r}
+# first here's all of the contrasts plotted:
+plot(nut_food_emmeans$contrasts)
+
+# take a look at order of levels in nut_food_emmeans 
+nut_food_emmeans
+
+custom_contrasts <- contrast(nut_food_emmeans, method = list(
+         "H_G_vs_H_P" = c(0, 0, 1, 0, -1, 0),
+         "L_G_vs_L_P" = c(0, 0, 0, 1, 0, -1)
+         )
+         )  
+custom_contrasts
+
+# provides the same p-values as the non-adjusted contrast:
+nut_food_emmeans_no_adjust = emmeans(rich_model, specs = trt.vs.ctrl ~ NutrientLevel*FoodWeb, adjust = "none")
+nut_food_emmeans_no_adjust
+```
+
+- G has significantly higher richness than P in the H treatment, but not in the L
+  treatment
+
+(3) whether G is different from P when averaging over the L and H treatments.
+```{r}
+# want a new emmeans without the interaction with nutrient level
+nut_emmeans = emmeans(rich_model, specs = trt.vs.ctrl ~ FoodWeb)
+nut_emmeans
+# results may be misleading? hmm...
+
+# I'm not sure if we also need to make a new model, warning suggests so...
+simple_model <- lm(Phyto_Chao1 ~ FoodWeb + NutrientLevel + Block, 
+            data = data)
+summary(simple_model)
+
+nut_emmeans = emmeans(simple_model, specs = trt.vs.ctrl ~ FoodWeb)
+nut_emmeans
+
+# one custom contrast
+custom_contrast <- contrast(nut_emmeans, method = list(
+         "G_vs_P" = c(0, 1, -1)
+         )
+         )  
+custom_contrast
+```
+
+- yes, G has a significantly higher species richness than P when averaging
+  across nutrient level and block treatments
+
+Finally, (4) define an interaction contrast that tests whether the difference 
+between G and P is itself different between L and H treatments. I.e., is (G – P) 
+for the high nutrient treatments greater or smaller than (G – P) for the 
+low nutrient treatments?
+```{r}
+nut_food_emmeans
+
+interaction_contrast <- contrast(nut_food_emmeans, 
+         list("HG_min_HP" = c(0, 0, 1, 0, -1, 0),
+              "LG_min_LP" = c(0, 0, 0, 1, 0, -1)
+              ))
+interaction_contrast
+```
+
 #10.
 How do you interpret the results?
 
-
+- The difference between G and P is only significant in the high nutrient treatment,
+  where G has 6.51 more species than P. In the low treatment the difference
+  between G and P is insignificant.
 
 
 
