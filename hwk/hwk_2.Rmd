@@ -1,0 +1,199 @@
+---
+title: "hwk_2"
+author: "Holden Jones"
+date: "2025-01-28"
+output: html_document
+---
+
+factorially implemented experimental treatments (N:P ratio, light, nutrient level,
+grazer presence, grazer predator presence)
+- only use balanced N:P treatment, include both light levels but not look at effects
+  of light
+```{r}
+library(tidyverse)
+library(effects)
+library(emmeans)
+
+data <- read_csv('data/leibold_mesocosm_data_subset.csv')
+```
+
+# 1. 
+Create a linear model that tests whether richness is explained by nutrient level 
+and/or food web treatment, and whether the effect of food web treatment differs 
+between nutrient levels, while also accounting for the blocked structure of the 
+experiment. 
+```{r}
+rich_model <- lm(Phyto_Chao1 ~ NutrientLevel + FoodWeb + 
+                   NutrientLevel*FoodWeb + Block, 
+            data = data)
+summary(rich_model)
+```
+
+#2. 
+Why is it important to account for the blocks? 
+- Eventually will want to include block as a random effect, right?
+- Important to account for b/c different blocks could have different light
+  availability, freshwater sources.. etc. lots of different things depending on
+  how the study was performed
+
+# 3.
+Analyze the results of the linear model as we did in Homework 1. What is your 
+interpretation of these results so far?
+```{r}
+par(mfrow = c(2, 2))
+plot(rich_model)
+# residual plots look good - not concerned about scaling data
+
+# anova
+anova(rich_model)
+
+# effects plot
+par(mfrow = c(2, 2))
+plot(allEffects(rich_model))
+
+ggplot(data, aes(x = Block, y = Phyto_Chao1)) +
+  geom_boxplot()
+```
+
+treat block as a factor
+```{r}
+# seems like need to treat Block as factor
+data$Block <- as.factor(data$Block)
+
+ggplot(data, aes(x = Block, y = Phyto_Chao1)) +
+  geom_boxplot()
+
+rich_model <- lm(Phyto_Chao1 ~ NutrientLevel + FoodWeb + 
+                   NutrientLevel*FoodWeb + Block, 
+            data = data)
+summary(rich_model)
+
+par(mfrow = c(2, 2))
+plot(rich_model)
+# residual plots look good - not concerned about scaling data
+
+# anova
+anova(rich_model)
+
+# effects plots
+par(mfrow = c(2, 2))
+plot(allEffects(rich_model))
+```
+
+- treating block as a factor
+- food web has a significant effect on richness, with the algae and grazers treatment
+  having significantly higher richness than just algae or both with predators
+- high nutrient level also has a significantly higher richness than low nutrient
+
+Now we will use contrasts to test some hypotheses, and we will imagine that we 
+formulated these hypotheses a priori (as opposed to formulating them after we 
+looked at the data). We would like to know specifically whether the grazer 
+treatment (G) has greater richness than the algae treament (A), and whether the 
+effect of grazers differs between high and low nutrient levels (we think the 
+effect of grazers on coexistence may be greater at high nutrient loading).
+
+# 4.
+Use emmeans to calculate the estimated marginal means of each combination of 
+nutrient level and food web treatment (i.e., H + A, H + G, H + P, L + A, L + G,
+L + P). 
+```{r}
+nut_food_emmeans = emmeans(rich_model, specs = trt.vs.ctrl ~ NutrientLevel*FoodWeb)
+nut_food_emmeans
+```
+
+- at a 0.05 p-value threshold, only sig difference is LG vs. HA, which probably
+  isn't too meaningful (low grazer vs high algae?)
+- HG is very likely more than HA (p-value 0.11)
+
+# 5.
+Now define contrasts to test (1) whether G is different from A in the H 
+treatment, (2) whether G is different from A in the L treatment
+```{r}
+# first here's all of the contrasts plotted:
+plot(nut_food_emmeans$contrasts)
+
+# take a look at order of levels in nut_food_emmeans 
+nut_food_emmeans
+
+custom_contrasts <- contrast(nut_food_emmeans, method = list(
+         "H_G_vs_H_A" = c(-1, 0, 1, 0, 0, 0),
+         "L_G_vs_L_A" = c(0, -1, 0, 1, 0, 0)
+         )
+         )  
+custom_contrasts
+
+# provides the same p-values as the non-adjusted contrast:
+nut_food_emmeans_no_adjust = emmeans(rich_model, specs = trt.vs.ctrl ~ NutrientLevel*FoodWeb, adjust = "none")
+nut_food_emmeans_no_adjust
+```
+
+- G has significantly higher richness than A in both the H and L treatments, by a comparable 
+  amount (between 6.11-8.82 species)
+
+#6.
+(3) whether G is different from A when averaging over the L and H treatments.
+```{r}
+# want a new emmeans without the interaction with nutrient level
+nut_emmeans = emmeans(rich_model, specs = trt.vs.ctrl ~ FoodWeb)
+nut_emmeans
+# results may be misleading? hmm...
+
+# I'm not sure if we also need to make a new model, warning suggests so...
+simple_model <- lm(Phyto_Chao1 ~ FoodWeb + NutrientLevel + Block, 
+            data = data)
+summary(simple_model)
+
+nut_emmeans = emmeans(simple_model, specs = trt.vs.ctrl ~ FoodWeb)
+nut_emmeans
+
+# one custom contrast
+custom_contrast <- contrast(nut_emmeans, method = list(
+         "G_vs_A" = c(-1, 1, 0)
+         )
+         )  
+custom_contrast
+```
+
+- yes, G has a significantly higher species richness than A when aceraging
+  across nutrient level and block treatments
+
+#7.
+Finally, (4) define an interaction contrast that tests whether the difference 
+between G and A is itself different between L and H treatments. I.e., is (G – A) 
+for the high nutrient treatments greater or smaller than (G – A) for the 
+low nutrient treatments?
+```{r}
+nut_food_emmeans
+
+interaction_contrast <- contrast(nut_food_emmeans, 
+         list("HG_min_HA" = c(-1, 0, 1, 0, 0, 0),
+              "LG_min_LA" = c(0, -1, 0, 1, 0, 0)
+              ))
+interaction_contrast
+```
+
+- it looks like the difference between G and A is larger in the low nutrient
+  than the high nutrient treatment, although this difference is pretty small (.7)
+
+#8.
+How do you interpret these results?
+
+- The G treatments appear to have higher species richness than the A treatments,
+  this difference is slightly larger in the low nutrient than high nutrient 
+  mesocosms.
+
+#9.
+Now, repeat the same set of 4 contrasts, but this time ask whether the P treatment 
+is different from the G treatment. We are interested in these contrasts a priori 
+because we think that adding a predator of the grazers may mean that grazers have 
+a weaker effect on phytoplankton diversity, and that this trophic cascade may be 
+more important under high nutrient supply. 
+
+#10.
+How do you interpret the results?
+
+
+
+
+
+
