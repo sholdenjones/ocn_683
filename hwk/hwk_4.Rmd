@@ -5,26 +5,279 @@ date: "2025-03-28"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r}
+library(tidyverse)
+library(arm)
+library(VGAM)
+library(MASS)
+
+acartia <- read_csv('data/dam_acartia_survival_subset.csv')
+yellow_tang <- read_csv('data/yellowtang.csv')
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+#1. 
+Histogram of the data
+- use discrete.histogram()
+```{r}
+# histogram for nx, this is the data of interest
+discrete.histogram(acartia$nx)
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+#2.
+mean and variance of number of survivors
+- mean = 17.38
+- var = 58.11
+```{r}
+mean(acartia$nx)
+var(acartia$nx)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+what should the variance be, given the observed mean, if distribution is binomial?
+- var should be 19.28 if data is binomially distributed
+```{r}
+# var = np(1-p)
+
+# p, prob of success
+p <- (mean(acartia$nx) / 25)
+  
+# n, number of trials
+n <- nrow(acartia)
+
+# var calc
+n*p*(1-p)
+```
+
+ 
+#3.
+rbinom() to simulate  draws from dist with same prob of survival, same length
+```{r}
+# here's how we do it once
+random_bugs <- rbinom(n, 25, p)
+
+random_bugs %>%
+  discrete.histogram() %>%
+  mean() %>%
+  var()
+```
+
+repeat this 4 more times
+```{r}
+# loop through 5 different draws, printing histogram, mean, var
+
+set.seed(123) 
+
+for (i in 1:5) {
+  random_bugs <- rbinom(n, 25, p)
+  
+  # plot discrete histogram
+  discrete.histogram(random_bugs)
+  
+  # calculate mean and variance
+  mean_value <- mean(random_bugs)
+  var_value <- var(random_bugs)
+  
+  # print results
+  cat("\nIteration", i, ":\n")
+  cat("Mean:", mean_value, "\n")
+  cat("Variance:", var_value, "\n\n")
+  
+  Sys.sleep(1)
+}
+```
+
+how and why do simulated and observed data differ?
+- observed data has a much more skewed dist - it is zero-inflated
+- don't see any 0's in the simulated data
+- the observed data appears to be bimodal - peak at 0, and much higher survival
+  for those that do survive (peaking at roughly 19)
+- some variation in simulated output, but 
+- possible (but exceedingly unlikely) that sample size is too low if observed
+  data truly follows the binomial dist, maybe would see more similarity with
+  more replication
+- most likely is that the observed data does not follow the binomial dist! seems
+  like there has to be some way to manage this zero-inflation....
+  
+  
+#4.
+beta binomial - allows for prob of success to vary across trials
+```{r}
+# using same n, p as above
+
+beta_random_bugs <- rbetabinom(n, 25, p, rho = 0)
+```
+
+make a loop, create histograms across full possible range of rho (0:1)
+```{r}
+set.seed(123)
+
+rho_values <- seq(0, 1, length.out = 10)  # generate 10 rho values from 0 to 1
+
+simulate_beta_binomial <- function(rho_values) {
+  for (rho in rho_values) {
+  beta_random_bugs <- rbetabinom(n, 25, p, rho) 
+  
+  # plot discrete histogram
+  discrete.histogram(beta_random_bugs, xlab = "Count", 
+                     main = paste("Histogram for rho =", round(rho, 2)))
+  
+  # calculate mean and variance
+  mean_value <- mean(beta_random_bugs)
+  var_value <- var(beta_random_bugs)
+  
+  # print results
+  cat("\nRho =", round(rho, 2), ":\n")
+  cat("Mean:", mean_value, "\n")
+  cat("Variance:", var_value, "\n\n")
+  
+  Sys.sleep(1)
+  }
+}
+
+simulate_beta_binomial(rho_values)
+```
+
+visually inspect, seems like between .3 to 1.0 is more promising, loop here
+```{r}
+rho_values <- seq(.3, 1, length.out = 10)
+
+simulate_beta_binomial(rho_values)
+```
+
+again, 0.53 to 0.84
+```{r}
+rho_values <- seq(.53, .84, length.out = 10)
+
+simulate_beta_binomial(rho_values)
+```
+
+try 0.77 to 0.9? Honestly not seeing any of these look super close
+```{r}
+rho_values <- seq(.77, 0.9, length.out = 10)
+
+simulate_beta_binomial(rho_values)
+```
+
+hmm, well if I have to pick one, I guess let's go with rho = 0.67?
+- but again, none of these appropriately mirror the observed distribution in my 
+  opinion
+  
+
+#5. 
+histogram of yellow tang counts
+```{r}
+discrete.histogram(yellow_tang$count)
+```
+
+
+#6.
+mean var of count
+- mean = 5.03
+- var = 35.97
+```{r}
+mean(yellow_tang$count)
+var(yellow_tang$count)
+```
+
+var if Poisson distribution
+- in Poisson, variance = mean
+- so, var = 5.03 in Poisson distribution
+- variance is way higher! Seems like this data is zero-inflated, preventing it
+  from fitting the Poisson distribution
+  
+
+#7.
+simulate five sets of random draws from Poisson dist
+- use same looping strategy as above
+```{r}
+n <- nrow(yellow_tang)
+lambda <- mean(yellow_tang$count)
+
+set.seed(123) 
+
+for (i in 1:5) {
+  random_fish <- rpois(n, lambda)
+  
+  # plot discrete histogram
+  discrete.histogram(random_fish)
+  
+  # calculate mean and variance
+  mean_value <- mean(random_fish)
+  var_value <- var(random_fish)
+  
+  # print results
+  cat("\nIteration", i, ":\n")
+  cat("Mean:", mean_value, "\n")
+  cat("Variance:", var_value, "\n\n")
+  
+  Sys.sleep(1)
+}
+```
+
+how are these distributions different?
+- these simulated distributions more closely resemble the normal dist (maybe b/c
+  n is so high?)
+- in the simulated distributions we lose the abundance of 0,1,2 count instances,
+  and the tail of really large counts (up to 52!)
+- the simulated distributions appear to closely resemble the normal distribution,
+  with a slight upward tail only up to 16
+  
+  
+#8.
+trial and error parameter fitting from negative binomial dist
+- can model counts with more variability than Poisson dist.
+- use same strategy as above
+```{r}
+n <- nrow(yellow_tang)
+mu <- mean(yellow_tang$count)
+
+set.seed(123)
+
+theta_values <- seq(0.1, 1000, length.out = 10) # generate 10 theta values from 0 to 1000
+
+simulate_neg_binomial <- function(theta_values) {
+  for (theta in theta_values) {
+  beta_random_fish <- rnegbin(n, mu, theta) 
+  
+  # plot discrete histogram
+  discrete.histogram(beta_random_fish, xlab = "Count", 
+                     main = paste("Histogram for theta =", round(theta, 2)))
+  
+  # calculate mean and variance
+  mean_value <- mean(beta_random_fish)
+  var_value <- var(beta_random_fish)
+  
+  # print results
+  cat("\nTheta =", round(theta, 2), ":\n")
+  cat("Mean:", mean_value, "\n")
+  cat("Variance:", var_value, "\n\n")
+  
+  Sys.sleep(1)
+  }
+}
+
+# start with .1 - 1000
+simulate_neg_binomial(theta_values)
+```
+
+okay, awesome! clearly, theta needs to be a very small number, good to know!
+- let's run again starting at 0.01 and going to 1, see how this goes
+```{r}
+# now run with .01 - 1
+theta_values <- seq(0.01, 1, length.out = 10)
+simulate_neg_binomial(theta_values)
+```
+
+super cool, 0.78 seems to really closely approximate observed dist.
+- further refine
+```{r}
+# refine with .6 - .9
+theta_values <- seq(0.6, 0.9, length.out = 10)
+simulate_neg_binomial(theta_values)
+```
+
+my final choice is theta = 0.73
+- I like that it appropriately models the abundance of low count observations,
+  and includes a tail for high count values that is close to the observed max
+  of ~50
