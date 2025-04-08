@@ -1,0 +1,135 @@
+---
+title: "hwk_5"
+author: "Holden Jones"
+date: "2025-04-08"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(GGally)
+library(effects)
+
+fish <- read_csv('data/CRCP_fish.csv')
+```
+
+
+#1. 
+look at dist of ta(20), hard_coral (17), sand(21), cca(22)
+- this function is super cool!
+```{r}
+compare_var <- ggpairs(fish, columns = c(17,20,21,22))
+compare_var
+```
+
+
+#2.
+single predictor models for each predictor with kole count as response
+- use Poisson dist.
+- which predictors should be transformed to reduce skew?
+  - based on dist. looks like hard_coral, cca, sand are very skewed
+```{r}
+fish <- fish %>%
+  mutate(sqrt_hard_coral = sqrt(hard_coral),
+         sqrt_sand = sqrt(sand),
+         sqrt_cca = sqrt(cca))
+```
+  
+check out these sqrt vars
+- doesn't this make the vars closer to the normal dist? but it does reduce skew
+```{r}
+compare_sqrt_var <- ggpairs(fish, columns = 48:50)
+compare_sqrt_var
+```
+
+positive effect on kole count
+-hard_coral, cca
+
+negative effect on kole count
+- sand, ta
+```{r}
+# hard_coral
+glm_hard_coral <- glm(count ~ hard_coral, family = poisson, data = fish)
+summary(glm_hard_coral) # hard_coral sig pos effect
+
+glm_hard_coral_sqrt <- glm(count ~ sqrt_hard_coral, family = poisson,
+                           data = fish)
+summary(glm_hard_coral_sqrt) # sqrt hard_coral sig pos effect
+
+# sand
+glm_sand <- glm(count ~ sand, family = poisson, data = fish)
+summary(glm_sand) # sand sig neg effect
+
+glm_sand_sqrt <- glm(count ~ sqrt_sand, family = poisson,
+                           data = fish)
+summary(glm_sand_sqrt) # sqrt sand sig neg effect
+
+# cca
+glm_cca <- glm(count ~ cca, family = poisson, data = fish)
+summary(glm_cca) # cca sig pos effect
+
+glm_cca_sqrt <- glm(count ~ sqrt_cca, family = poisson,
+                           data = fish)
+summary(glm_cca_sqrt) # sqrt cca sig pos effect
+
+# ta - not transformed
+glm_ta <- glm(count ~ ta, family = poisson, data = fish)
+summary(glm_ta) # ta sig neg effect
+```
+
+let's look at overdispersion
+- every single model is extremely overdispersed
+- ideally dispersion would be 1 - most of these are about 30! even the transformed
+  ones
+```{r}
+# make function for calculating dispersion
+dispersion = function(model) {
+  sum(residuals(model, type = "pearson")^2) / df.residual(model)
+}
+
+# calculate degree of dispersion for each model
+dispersion(glm_hard_coral)
+dispersion(glm_hard_coral_sqrt)
+dispersion(glm_sand)
+dispersion(glm_sand_sqrt)
+dispersion(glm_ta)
+dispersion(glm_cca)
+dispersion(glm_cca_sqrt)
+```
+
+likelihood ratio tests for each model
+- the single predictor is significant in every single one of these likelihood
+  ratio tests
+- I don't like that I can't see the sign or size of the effect
+```{r}
+anova(glm_hard_coral)
+anova(glm_hard_coral_sqrt)
+anova(glm_sand)
+anova(glm_sand_sqrt)
+anova(glm_ta)
+anova(glm_cca)
+anova(glm_cca_sqrt)
+```
+
+make effects plots to investigate size and sign of effects
+- hard_coral has positive effect on count
+- sand has negative effect on count
+- ta has negative effect on count
+- cca has positive effect on count
+```{r}
+plot(allEffects(glm_hard_coral))
+plot(allEffects(glm_hard_coral_sqrt))
+plot(allEffects(glm_sand))
+plot(allEffects(glm_sand_sqrt))
+plot(allEffects(glm_ta))
+plot(allEffects(glm_cca))
+plot(allEffects(glm_cca_sqrt))
+```
+
+All in all, it appears that hard coral and sand have significant effects on count,
+  and that ta and cca have negative effects on count. BUT - I'm spooked by the 
+  massive amount of dispersion in every model (even those that I transformed).
+  I don't feel that these models fit well enough for me to appropriately interpret.
+  
+
+
