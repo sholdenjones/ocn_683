@@ -9,6 +9,7 @@ output: html_document
 library(tidyverse)
 library(GGally)
 library(effects)
+library(MASS)
 
 fish <- read_csv('data/CRCP_fish.csv')
 ```
@@ -132,4 +133,99 @@ All in all, it appears that hard coral and sand have significant effects on coun
   I don't feel that these models fit well enough for me to appropriately interpret.
   
 
+#3.
+use negative binomial distribution when Poisson dist. is overdispersed
+- re run every model changing family to negative binomial
+- need to use glm.nb() from MASS package
+```{r}
+# hard_coral
+glm_hard_coral <- glm.nb(count ~ hard_coral, data = fish)
+summary(glm_hard_coral) # hard_coral sig pos effect
+
+glm_hard_coral_sqrt <- glm.nb(count ~ sqrt_hard_coral, data = fish)
+summary(glm_hard_coral_sqrt) # sqrt hard_coral sig pos effect
+
+# sand
+glm_sand <- glm.nb(count ~ sand, data = fish)
+summary(glm_sand) # sand sig neg effect
+
+glm_sand_sqrt <- glm.nb(count ~ sqrt_sand, data = fish)
+summary(glm_sand_sqrt) # sqrt sand sig neg effect
+
+# cca
+glm_cca <- glm.nb(count ~ cca, data = fish)
+summary(glm_cca) # cca sig pos effect
+
+glm_cca_sqrt <- glm.nb(count ~ sqrt_cca, data = fish)
+summary(glm_cca_sqrt) # sqrt cca sig pos effect
+
+# ta - not transformed
+glm_ta <- glm.nb(count ~ ta, data = fish)
+summary(glm_ta) # ta sig neg effect
+```
+
+calculate degree of dispersion for these new neg binomial models
+- that's more like it! this is now appropriate for interpretation
+- dispersion parameter approximately equal to 1 (way better than 30)
+- the negative binomial fits the data much better than the Poisson dist.
+```{r}
+dispersion(glm_hard_coral)
+dispersion(glm_hard_coral_sqrt)
+dispersion(glm_sand)
+dispersion(glm_sand_sqrt)
+dispersion(glm_ta)
+dispersion(glm_cca)
+dispersion(glm_cca_sqrt)
+```
+
+likelihood ratio tests for each of these negative binomial models as well
+```{r}
+anova(glm_hard_coral)
+anova(glm_hard_coral_sqrt)
+anova(glm_sand)
+anova(glm_sand_sqrt)
+anova(glm_ta)
+anova(glm_cca)
+anova(glm_cca_sqrt)
+```
+
+look at effects plots for new models
+```{r}
+plot(allEffects(glm_hard_coral))
+plot(allEffects(glm_hard_coral_sqrt))
+plot(allEffects(glm_sand))
+plot(allEffects(glm_sand_sqrt))
+plot(allEffects(glm_ta))
+plot(allEffects(glm_cca))
+plot(allEffects(glm_cca_sqrt))
+```
+
+This new round of negative binomial models fits the data much better.
+- These negative binomial models are no longer overdispersed
+- The overall findings are still the same (hard_coral, cca sig pos; sand, ta sig neg)
+- It appears that square root transforming skewed variables is no longer necessary
+  minimal difference in model fit between transformed and non-transformed models
+  
+
+#4.
+
+make full model with multiple substrate types
+- not using transformed vars per earlier observation
+```{r}
+glm_full <- glm.nb(count ~ hard_coral + sand + cca + ta, data = fish)
+summary(glm_full) # hard_coral sig pos, cca sig pos, ta sig pos
+```
+
+likelihood ratio tests and effects plots
+```{r}
+dispersion(glm_full)
+anova(glm_full)
+plot(allEffects(glm_full))
+```
+
+overall conclusions
+- with the full model it now appears that all substrates have a positive effect
+  on counts? This does seem a bit unlikely.
+- this full model is not overdispersed (although it's close to limit)
+- I don't feel the need to run any more analyses, time for dinner!
 
