@@ -1,0 +1,159 @@
+---
+title: "hwk_6"
+author: "Holden Jones"
+date: "2025-04-10"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(arm)
+library(ggeffects)
+library(DHARMa)
+library(car)
+library(ggResidpanel)
+
+birds <- read_csv('data/pox_data.csv')
+```
+
+#1. 
+
+number of each species at each elevation
+- not surprisingly little to no APAP and IIWI at low and mid elevations
+```{r}
+# factor species and elevation for plotting
+birds$Elev <- factor(birds$Elev, levels = c("low", "mid", "high"))
+birds$Species <- factor(birds$Species)
+
+birds_spe_ele <- birds %>%
+  group_by(Species, Elev) %>%
+  count()
+
+birds_spe_ele
+```
+
+prevalence of malaria for each species at each elevation (only 0 or 1)
+```{r}
+# filter out ind. where malaria = 2
+birds_mal <- birds %>%
+  filter(Malaria %in% c(0, 1))
+
+birds_mal # now have 7,538 birds whose malaria status we know
+
+birds_mal %>%
+  group_by(Species, Elev, Malaria) %>%
+  count()
+```
+
+
+#2.
+
+first look at hist of data
+- many more 0s than 1s
+```{r}
+discrete.histogram(birds$Activepox)
+```
+
+model testing whether pox prevalence depends on elevation and between species and 
+whether different species depends on different elevations
+- this is binomial data, use binomial dist.
+- most interested in modeling p, probability of pox
+```{r}
+glm_pox_bin <- glm(Activepox ~ Species + Elev + Species*Elev, data = birds,
+                   family = binomial)
+summary(glm_pox_bin)
+```
+
+evaluate model using general methods in this course
+- Iiwi has sig higher pox prevalence than Apapane
+- both low and mid elevations have sig higher pox prevalence than high elevation
+- compared to Apapane at high elevations (I'm not sure why additional comparisons are not shown); 
+  - Amakihi low sig lower
+  - White eye low sig lower
+  - Amakihi mid sig lower
+  - White eye mid sig lower
+
+NA for Iiwi low b/c this species is not present at low elevations
+
+likelihood ratio tests
+- each of these predictors has a significant effect on pox prevalence
+```{r}
+Anova(glm_pox_bin)
+```
+
+look at residual, effects plots
+```{r}
+sim_res_model <- simulateResiduals(fittedModel = glm_pox_bin)
+plot(sim_res_model)
+
+resid_panel(glm_pox_bin, plots = 'resid', smoother = TRUE)
+
+plot(ggpredict(glm_pox_bin, terms = c("Elev", "Species")))
+```
+
+All residuals look great, I don't see any issues with overdispersion - binomial
+  distribution appears to be an appropriate choice here.
+  
+The effects plot is especially helpful
+- Amakihi and white eye appear resilient to pox across elevations
+- almost no pox at high elevations
+- Apapane and Iiwi highly susceptible at low and mid elevations
+- notice that error bars are super high at low elevations, b/c not many of these
+  native species
+
+
+#3.
+
+filter dataset for only birds with malaria status, no Iiwi
+```{r}
+# use birds_mal from above, filter out Iiwi
+birds_mal <- birds_mal %>%
+  filter(Species != 'IIWI')
+```
+
+create model testing if malaria status and elevation affect pox prevalence
+- include species interactions for each predictor
+```{r}
+glm_pox_mal <- glm(Activepox ~ Malaria + Elev + Species*Elev + Species*Malaria, 
+                   data = birds_mal,
+                   family = binomial)
+
+summary(glm_pox_mal)
+```
+
+interpreting model summary
+- malaria has a significant positive effect on pox prevalence
+- high elevations have a significantly lower pox prevalence than low and mid
+- interactions show species dependent effects
+  - Amakihi are sig less likely to have pox if they have malaria than other species(?)
+  - Amakihi are sig more likely to have pox at high elevations compared to other species(?)
+
+evaluate model
+- each of these predictors and the interactions have significant effects
+```{r}
+Anova(glm_pox_mal)
+```
+
+look at residual, effects plots
+- no issues with residuals! binomial dist. fits well here
+- Warbling white eye not included here (likely didn't collect malaria data b/c resistent)
+- effects plots shows what we would expect
+  - lots of uncertainty for pox probability at low elevations for apapane (small sample)
+  - Apapane are more likely to have pox at mid elevations than Amakihi
+- at high elevation see Amakihi have small prob of pox but higher than Apapane
+- malaria greatly increases probability of pox for apapane, minimally for amakihi
+  - it does so at both mid and high elevations, not low (small sample size of native birds)
+```{r}
+sim_res_model <- simulateResiduals(fittedModel = glm_pox_mal)
+plot(sim_res_model)
+
+resid_panel(glm_pox_mal, plots = 'resid', smoother = TRUE)
+
+plot(ggpredict(glm_pox_mal, terms = c("Elev", "Species")))
+
+plot(ggpredict(glm_pox_mal, terms = c("Malaria", "Species")))
+
+plot(ggpredict(glm_pox_mal, terms = c("Malaria", "Elev")))
+```
+
+
