@@ -266,32 +266,47 @@ zeros could vary across experimental treatments
   
 use an appropriate zero-inflated model and allow extra zeros to vary 
   w/ temp, pred, interaction
-  
-## ERRORS HERE
 ```{r}
 # use model_no_int_2 as base, this was the best fitting model (lowest AIC)
 model_no_int_3 <- glmmTMB(total.prey ~ temp.factor + predator_binary, 
-                            data = data, 
+                            data = bugs, 
                             family = nbinom2, 
                             ziformula = ~ temp.factor*predator_binary)
 summary(model_no_int_3)
 
 model_no_int_4 <- glmmTMB(total.prey ~ temp.factor + predator_binary, 
-                            data = data, 
+                            data = bugs, 
                             family = nbinom2, 
                             ziformula = ~ temp.factor) 
-summary(model_no_int_4)
+summary(model_no_int_4) # best fit, AIC 654
 
 model_no_int_5 <- glmmTMB(total.prey ~ temp.factor + predator_binary, 
-                            data = data, 
+                            data = bugs, 
                             family = nbinom2, 
                             ziformula = ~ predator_binary) 
 summary(model_no_int_5)
 ```
 
+likelihood ratio tests between these models
+- allowing zero inflation to change based on temperature has the best fit
+```{r}
+anova(model_no_int_3, model_no_int_4, model_no_int_5)
+# lowest AIC is model_no_int_4
 
+# run diagnostics on model_no_int_4
+Anova(model_no_int_4) # temp.factor sig effect, predator_binary sig effect
 
+sim_res_model <- simulateResiduals(fittedModel = model_no_int_4)
+plot(sim_res_model) # no deviation detected!
+check_overdispersion(model_no_int_4) # not overdispersed!
 
+plot(ggpredict(model_no_int_4, terms = c("temp.factor", "predator_binary")))
+```
 
-
-
+the best fitting model includes zero-inflation varying by temperature
+- at lower temperatures prey are more likely to die, so greater zeros at low temp
+- this model fits better than all other iterations
+- in this best fitting model, temperature has a significant, positive effect on
+  survival, and predator_binary has a negative, significant effect on survival
+- importantly, this model is no longer overdispersed or containing deviation
+- so this model fits significantly better than all other attempts
