@@ -1,0 +1,297 @@
+---
+title: "hwk_7"
+author: "Holden Jones"
+date: "2025-04-11"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(glmmTMB)
+library(car)
+library(DHARMa)
+library(ggeffects)
+library(performance)
+
+bugs <- read_csv('data/collembola.csv')
+
+# factor temp.factor and predators for plotting
+bugs$temp.factor <- factor(bugs$temp.factor)
+bugs$predators<- factor(bugs$predators)
+```
+
+focus on springtail abundance and how affected by temp and mite predation
+
+#1.
+
+huge variation in total.prey
+- lots of zeros
+```{r}
+hist(bugs$total.prey)
+```
+
+
+fit standard model for counts (Poisson), but assess if overdispersed
+- is abundance of Collembola affected by temp, predator presence, and interaction
+- fit with glmmTMB()
+```{r}
+model_full <- glmmTMB(
+  total.prey ~ temp.factor + predators + temp.factor*predators,
+  family = poisson,
+  data = bugs
+)
+summary(model_full) # with Poisson almost every term is sig
+```
+
+plot fitted effects and perform likelihood ratio tests on terms
+```{r}
+Anova(model_full) # all have sig effect
+
+sim_res_model <- simulateResiduals(fittedModel = model_full)
+plot(sim_res_model) # interesting, significant deviation suggesting overdispersion
+check_overdispersion(model_full) # overdispersion detected
+
+plot(ggpredict(model_full, terms = c("temp.factor", "predators")))
+```
+
+let's try negative binomial to see if this better addresses residual deviation
+```{r}
+model_nb <- glmmTMB(
+  total.prey ~ temp.factor + predators + temp.factor*predators,
+  family = nbinom2,
+  data = bugs
+)
+summary(model_nb) # with neg binom none of these variables are sig - huh
+```
+
+plot fitted effects and perform likelihood ratio tests on terms
+```{r}
+Anova(model_nb) # no sig effect
+
+sim_res_model <- simulateResiduals(fittedModel = model_nb)
+plot(sim_res_model) # significant deviation suggesting overdispersion
+check_overdispersion(model_nb) # interesting, not overdispersed!
+
+plot(ggpredict(model_nb, terms = c("temp.factor", "predators")))
+```
+
+neither negative binomial or Poisson appear to fit data well (sig deviation)
+- but, Poisson has overdispersion, negative binomial does not
+- suggests that will need to do zero-inflation instead
+- but move forward with using anova() for marginal tests with negative binomial model
+
+perform marginal tests compare pairs of models using anova()
+- for each term to test, compare a model with this term to model without this term
+```{r}
+# no temp.factor
+model_no_temp <- glmmTMB(
+  total.prey ~ predators + temp.factor*predators,
+  family = nbinom2,
+  data = bugs
+)
+summary(model_no_temp) # nothing sig
+
+# no predators
+model_no_pred <- glmmTMB(
+  total.prey ~ temp.factor + temp.factor*predators,
+  family = nbinom2,
+  data = bugs
+)
+summary(model_no_pred) # nothing sig
+
+# no interaction
+model_no_int <- glmmTMB(
+  total.prey ~ predators + temp.factor,
+  family = nbinom2,
+  data = bugs
+)
+summary(model_no_int) # nothing sig
+```
+
+run comparisons between candidate models using anova
+```{r}
+# not sure how to address interaction, seems important to compare against full
+anova(model_full, model_no_temp) # wow! removing temp sig increases model fit compared to full
+anova(model_full, model_no_pred) # wow! removing pred sig increases model fit compared to full
+
+anova(model_no_temp, model_no_pred) # neither pred nor temp have any impact on model fit
+anova(model_no_temp, model_no_int) # again, minimal to no impact of temp
+anova(model_no_pred, model_no_int) # again, minimal to no impact of pred
+```
+
+how do we interpret results so far?
+- it doesn't seem like any of these predictors (pred, temp, interaction) have
+  any sort of sig effect on prey count. 
+- removing them greatly improves model fit compared to the full model
+- but, tread lightly b/c there are a lot of variables in this dataset, which
+  suggests that zero-inflation could be at play. Also based on the experimental
+  design, it seems like there would be many instances where the prey ate all of the
+  predators. 
+- I used the negative binomial over the Poisson distribution for the full model,
+  but I'm not confident about this being the best fit. Even though the negative
+  binomial didn't contain overdispersion (the Poisson did), it still contained
+  significant deviation suggesting the model fit can be improved with a different
+  distribution.
+
+
+#2.
+
+use glmmTMB to fit zero-inflated count models
+- default will be Poisson, but depending on how goes could use nbinom or quassi
+```{r}
+# zero-inflated model using Poisson for count data
+model_zin_pois <- glmmTMB(total.prey ~ temp.factor + predators + temp.factor*predators, 
+                          data = bugs, 
+                          family = poisson, 
+                          ziformula = ~ 1)
+summary(model_zin_pois) # most terms sig, AIC 6478.2
+
+# zero-inflated model using negative binomial for count data
+model_zin_nbinom <- glmmTMB(total.prey ~ temp.factor + predators + temp.factor*predators, 
+                            data = bugs, 
+                            family = nbinom2, 
+                            ziformula = ~ 1)
+summary(model_zin_nbinom) # nothing sig, AIC 673.6
+```
+
+AIC for model_zin_nbinom is much lower, assess model fit to confirm not overdispersed
+```{r}
+Anova(model_zin_nbinom) # temp.factor sig effect, almost sig interaction
+
+sim_res_model <- simulateResiduals(fittedModel = model_zin_nbinom)
+plot(sim_res_model) # no deviation or overdispersion detected!
+check_overdispersion(model_zin_nbinom) # ot overdispersed!
+
+plot(ggpredict(model_zin_nbinom, terms = c("temp.factor", "predators")))
+```
+
+appears zero-inflated negative binomial model is the best, run anova with others to confirm
+- from ggpredict
+    - low prey survival at low temp,
+    - either predator makes a big negative impact on survival at med temp
+    - at high temp, seems like HA can't survive, but prey can (b/c prey survives w/HA)
+    - HM appears to still be effective predator at high temp, more resilient than HA
+
+AIC to perform model selection against nbinom from above
+- Yes, model_zin_nbinom has the lowest AIC by far, both nbinom models better than poisson
+```{r}
+# use model_nb and model_full to compare against models with zero-inflation
+anova(model_full, model_nb, model_zin_pois, model_zin_nbinom)
+```
+
+using best model, marginal likelihood ratio tests on predictors
+- stepwise remove terms
+```{r}
+# model_zin_nbinom from above
+summary(model_zin_nbinom) # AIC 673.6
+
+# model_no_temp
+model_no_temp <- glmmTMB(total.prey ~ predators + temp.factor*predators, 
+                           data = bugs, 
+                            family = nbinom2, 
+                            ziformula = ~ 1)
+summary(model_no_temp) # nothing sig, AIC 673.6, temp has no impact 
+
+# model_no_pred
+model_no_pred <- glmmTMB(total.prey ~ temp.factor + temp.factor*predators, 
+                            data = bugs, 
+                            family = nbinom2, 
+                            ziformula = ~ 1)
+summary(model_no_pred) # nothing sig, AIC 673.6, pred has no impact 
+
+# model_no_int
+model_no_int <- glmmTMB(total.prey ~ predators + temp.factor, 
+                            data = bugs, 
+                            family = nbinom2, 
+                            ziformula = ~ 1)
+summary(model_no_int) # AIC 671.9, removing interaction improves model fit
+# sig effect of temp, higher survival at higher temperatures
+```
+
+anova to compare these candidate models against full zero-inflated negative binomial
+- the model without the interaction fits the best (lowest AIC)
+```{r}
+anova(model_zin_nbinom, model_no_temp, model_no_pred, model_no_int)
+```
+
+how have results changed 
+- the zero-inflated negative binomial fits much better than non zero-inflated models
+- the best fitting candidate model did not contain the interaction term
+- in this model we saw a significantly higher survival of prey in the medium and high
+  temperature treatments compared to the low temperature treatment
+  
+  
+#3.
+
+doesn't seem like big difference b/ween predator treatments
+
+create new column, predator 0 or 1 (this will become a binomial)
+```{r}
+bugs <- bugs %>%
+  mutate("predator_binary" = ifelse(predators == "none",0 , 1))
+```
+
+model_no_int was the highest performing, use this with new predator_binary
+```{r}
+# model_no_int_2
+model_no_int_2 <- glmmTMB(total.prey ~ predator_binary + temp.factor, 
+                            data = bugs, 
+                            family = nbinom2, 
+                            ziformula = ~ 1)
+summary(model_no_int_2) # AIC 668.0
+# predators have a sig negative effect on survival
+# temp has a sig positive effect on survival
+```
+
+```{r}
+Anova(model_no_int_2) # temp.factor sig effect, predator_binary sig effect
+
+sim_res_model <- simulateResiduals(fittedModel = model_no_int_2)
+plot(sim_res_model) # deviation detected!
+check_overdispersion(model_no_int_2) # not overdispersed!
+
+plot(ggpredict(model_no_int_2, terms = c("temp.factor", "predator_binary")))
+```
+
+we now see that both the presence of predators, and the temperature have significant
+effects on survival
+- these patterns are similar to what I saw previously, but the effect of each
+  variable is a bit easier to see now.
+  
+  
+#4.
+
+zeros could vary across experimental treatments
+- this makes sense, maybe at lower temperatures more things die?
+  
+use an appropriate zero-inflated model and allow extra zeros to vary 
+  w/ temp, pred, interaction
+  
+## ERRORS HERE
+```{r}
+# use model_no_int_2 as base, this was the best fitting model (lowest AIC)
+model_no_int_3 <- glmmTMB(total.prey ~ temp.factor + predator_binary, 
+                            data = data, 
+                            family = nbinom2, 
+                            ziformula = ~ temp.factor*predator_binary)
+summary(model_no_int_3)
+
+model_no_int_4 <- glmmTMB(total.prey ~ temp.factor + predator_binary, 
+                            data = data, 
+                            family = nbinom2, 
+                            ziformula = ~ temp.factor) 
+summary(model_no_int_4)
+
+model_no_int_5 <- glmmTMB(total.prey ~ temp.factor + predator_binary, 
+                            data = data, 
+                            family = nbinom2, 
+                            ziformula = ~ predator_binary) 
+summary(model_no_int_5)
+```
+
+
+
+
+
+
+
