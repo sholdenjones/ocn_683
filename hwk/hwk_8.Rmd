@@ -7,5 +7,135 @@ output: html_document
 
 ```{r}
 library(tidyverse)
+library(car)
 ```
 
+
+#1.
+how will number of replicates influence statistical power?
+- have guess on effect size, residual noise
+  - assume true treatment mean is 460, true control mean is 415
+  - sd of variation between plots is 110
+  
+start w/ 3 replicates each of treatment and control
+- perform 1000 simulations
+- each time draw 3 treatment and 3 control values (from normal dist with tru mean and sd info above)
+- for each draw of 6 values, fit linear model testing for treatment effect
+- save p-value from f-test for treatment effect (Anova(model)$P[1]))
+- also save model coefficient quantifying difference between treatment and control groups
+- at end have 1000 p-values and 1000 coefficient values
+```{r}
+# treatment will be pulled from this dist
+rnorm(3, mean = 460, sd = 110)
+
+# control will be pulled from this dist
+rnorm(3, mean = 415, sd = 110)
+
+# sample size and number of sims
+sample.size = 3
+nsims = 1000
+
+# make vector to save coefficient and p-value
+coeff.saved = p.value.saved = vector()
+
+# here loop through nsims, pull sample.size from each dist 
+for (i in 1:nsims) {
+ treatment <- rnorm(sample.size, mean = 460, sd = 110)
+ control <- rnorm(sample.size, mean = 415, sd = 110)
+  sim_data <- data.frame( # make data frame
+    ANPP = c(treatment, control),
+    Treatment = rep(c("treatment", "control"), each = sample.size)
+  )
+  model <- lm(ANPP ~ Treatment, data = sim_data) # linear model
+ p.value.saved[i] <- Anova(model)$P[1]  # get pvalues
+  coeff.saved[i] <- coef(model)[2]  # get coefficients
+}
+
+length(p.value.saved) # 1000 of p.value.saved and coeff.saved
+length(coeff.saved)
+``` 
+ 
+What proportion of the p-values are less than 0.05? This is your statistical power, 
+under this design, effect size, and residual noise.
+- 7% of the p-values are less than 0.5
+- this seems pretty bad! we would only detect the true difference 7% of the time
+```{r}
+sum(p.value.saved < 0.05) / length(p.value.saved)
+```
+
+Now repeat this whole process using different numbers of replicates: 5, 10, 20, 50, 100. 
+```{r}
+# Define sample sizes and number of simulations
+sample.sizes <- c(3, 5, 10, 20, 50, 100)
+nsims <- 1000
+
+# Initialize a list to store results
+power_results <- numeric(length(sample.sizes)) #vinitialize term before loop
+coef_mean <- numeric(length(sample.sizes)) # initialize term before loop
+
+# Loop over each sample size
+for (n in 1:length(sample.sizes)) { # loop through different sample sizes
+  sample.size  <- sample.sizes[n] # set sample size for this iteration
+  coeff.saved <- numeric(nsims)
+  p.value.saved <- numeric(nsims)
+  
+  for (i in 1:nsims) {
+    treatment <- rnorm(sample.size, mean = 460, sd = 110)
+    control <- rnorm(sample.size, mean = 415, sd = 110)
+    
+    sim_data <- data.frame(
+      ANPP = c(treatment, control),
+      Treatment = rep(c("treatment", "control"), each = sample.size)
+    )
+    
+    model <- lm(ANPP ~ Treatment, data = sim_data)
+    p.value.saved[i] <- Anova(model)$P[1] # extract p-values
+    coeff.saved[i] <- summary(model)$coefficients[2] # extract effect size
+  }
+  
+  power_results[n] <- sum(p.value.saved < 0.05)/nsims  # compute statistical power
+  vector <- p.value.saved < 0.05 # make vector of true or false for p < 0.05
+  coef_mean[n] <- mean(coeff.saved[vector],na.rm = TRUE) # calculate the mean of coefficients from corresponding true/false vector
+}
+```
+
+Plot the statistical power vs. the number of replicates. How much replication do you need 
+to achieve a power of 0.25? This means that when there is a real treatment effect, 
+you will detect it (only) 25% of the time. 
+```{r}
+power_df <- data.frame(
+  sample_size = sample.sizes,
+  power = power_results
+)
+power_df
+
+# very clean linear relationship between sample size and power
+ggplot(data = power_df, aes(sample_size, power)) +
+  geom_point() +
+  geom_line()
+
+# need sample size of 20 to have power of 0.25 or greater
+power_df$sample_size[which.min(abs(power_df$power - 0.25))]
+```
+
+
+#2.
+for situations where statistical power is low, treatment effect can only be sig
+if quite large, may cause treatment effect to be exaggerated by chance
+- type M error, b/c making error about magnitude of effect
+
+what is mean of coefficient for each sample size?
+- coefficient size generally decreases as sample size increases
+
+how does type M error change for each sample size?
+- type M error gets smaller as sample size increases
+```{r}
+# saved calculated coef mean in earlier loop
+coef_mean
+
+# type M error, difference from tru mean
+coef_mean - 46
+```
+
+what are implications for understanding climate change, if most exp have low power?
+- means that we are potentially overestimating the impacts of warming / climate change!
