@@ -1,0 +1,240 @@
+---
+title: "hwk_9"
+author: "Holden Jones"
+date: "2025-04-24"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(MuMIn)
+
+dinos <- read_csv('data/dinos.csv')
+```
+
+
+#1. 
+
+Ask following questions
+- How fast does dino grow when it is young and growing quickly?
+- Any evidence that this curve saturates at some asymptotic mass?
+  - Or is the curve basically exponential?
+- If there is a sigmoidal relationship, what is estimated maximum size?
+- How well does simple linear model fit relative to more realistic models?
+
+start by plotting data
+- interesting, certainly seems like this data could be either exp or sigmoidal
+  - depending on how much value we place on top age data points
+```{r}
+ggplot(data = dinos, aes(x = Age, y = Mass)) +
+  geom_point() +
+  geom_smooth(method = "loess")
+```
+
+To answer, need to fit three curves to dataset using nls()
+- linear model
+- exponential model
+- logistic model
+```{r}
+mod_lin = nls(Mass ~ a + b*Age, data = dinos,
+start = list(a = 0.01, b = 1/2)
+)
+
+mod_exp = nls(Mass ~ a*exp(r*Age), data = dinos,
+start = list(a = 0.01, r = 5/4)
+)
+
+mod_log = nls(Mass ~ (m) / (1 + exp(-r*(Age - n))), data = dinos,
+start = list(r = 5/4, m = 30, n = 5/4)
+)
+```
+
+- need to supply start values for parameters, may be tricky
+  - if get errors, try other values
+  - for each model, report coefficient estimates and confidence intervals, and
+    plot fitted curves on top of raw data
+
+coefficient estimates
+```{r}
+summary(mod_lin) # a = -1.87, b = 2.07
+
+summary(mod_exp) # a = .98, r = .33
+
+summary(mod_log) # r = .51, m = 42.99, n = 9.13
+```
+
+
+plots
+```{r}
+plot(Mass ~ Age, data = dinos)
+lines(dinos$Age, predict(mod_lin), col = "blue")
+
+plot(Mass ~ Age, data = dinos)
+lines(dinos$Age, predict(mod_exp), col = "red")
+
+plot(Mass ~ Age, data = dinos)
+lines(dinos$Age, predict(mod_log), col = "green")
+```
+
+
+#2. 
+
+Compare three models using AICc
+- Which model is best?
+- What are AICc values and Akaike weights for three models?
+- How to interpret these results in terms of relative support for each model?
+
+AICc
+```{r}
+AICc(mod_lin) # 373.54
+
+AICc(mod_exp) # 298.17
+
+AICc(mod_log) # 238.73
+```
+
+AICc suggests that the logistic model is a far better fit than the other two
+
+weights
+```{r}
+#use delta-AIC to calculate the model likelihoods for all comparisons
+model.like.1 = exp(-0.5*(AICc(mod_lin) - AICc(mod_exp)))
+model.like.2 = exp(-0.5*(AICc(mod_exp) - AICc(mod_log)))
+model.like.3 = exp(-0.5*(AICc(mod_log) - AICc(mod_log)))
+#sum the model likelihoods for standardization
+summed.likes = sum(c(model.like.1, model.like.2, model.like.3))
+#calculate the Akaike weights
+weight1 = model.like.1/summed.likes
+weight2 = model.like.2/summed.likes
+weight3 = model.like.3/summed.likes
+
+weight1 # basically 0
+weight2 # basically 0
+weight3 # 1
+```
+
+comparing model weights also suggests that the logistic model is a far better fit
+than the other two
+
+The logistic model is the winner! So yes, seems like there's a max.
+
+
+#3.
+
+What is estimated exponential growth rate (r) for exponential and logistic models?
+- What is confidence interval on this parameter for the two models?
+- For exponential growth, doubling time is log(2)/r. How long does it take dino
+  to double in size, based on two models
+```{r}
+# r confidence intervals
+confint(mod_exp) # r 2.5%: .31 - 97.5%: .35
+
+confint(mod_log) # r 2.5%: .46 - 97.5%: .57
+
+# doubling time
+r_list = c(.31, .35, .46, .57)
+
+for (r in r_list) {
+  print(log(2)/r)
+}
+```
+
+confidence intervals
+- interesting, there's no overlap in r confidence intervals for the exp and log 
+  models. Exp estimates that r is between .31 - .35, while log estimates that 
+  r is between .46 - .57
+
+doubling time
+- our estimate of doubling time depends on which model we're pulling our r 
+  paramter estimate from. Using r from the exp model estimates between 1.98 - 2.24
+  years doubling time for these critters, while r from the log model estimates 
+  between 1.22 - 1.51 years doubling time.
+
+
+#4. 
+
+Is there evidence dino has a maximum size?
+- Yes! Logistic model which includes a max estimate is by far the best fitting model
+
+```{r}
+summary(mod_log) # m estimate 42.99
+confint(mod_log) # 2.5% 37.26 - 97.5% 51.45
+```
+
+- If so, what is the estimate for that max size?
+estimate for max size is 42.99 kg
+
+- What is confidence interval around the estimate?
+confidence interval for max size is 37.26 - 51.45 kg
+
+- How does estimated maximum size compare to largest size in data?
+this is larger than the largest size in the data by roughly 12 kg
+```{r}
+dinos %>%
+arrange(desc(Mass))
+```
+
+- How much stock do we put in Max estimate given data we have? If max is true, 
+  how big does this dino get, relative to human?
+I don't put too much stock in the max estimate from the log model b/c we have 80 obs
+  and none approach the estimate. If max is true this is about 1/14th the max
+  recorded weight of a human (according to google). But this dino appears to max
+  out (according to our log model) at a little under 1/2 the weight of the average
+  human male.
+
+
+#5.
+
+Compare three models using LOOCV
+```{r}
+# for linear model
+errors = vector()
+for(i in 1:nrow(dinos)) {
+  datause = dinos[-i,]
+  linear_model <- nls(Mass ~ a + b*Age, data = datause,
+    start = list(a = 0.01, b = 1/2))
+  errors[i] = dinos$Mass[i] - predict(linear_model, data.frame(Age = dinos$Age[i]))
+}
+cv1 = sqrt(mean(errors^2))
+
+cv1 # 2.57
+
+# for exponential model
+errors = vector()
+for(i in 1:nrow(dinos)) {
+  datause = dinos[-i,]
+  exponential_model <- nls(Mass ~ a * exp(r * Age), data = datause, 
+                 start = list(a = 0.01, r = 5/4))  
+  errors[i] = dinos$Mass[i] - predict(exponential_model, data.frame(Age = dinos$Age[i]))
+}
+cv2 = sqrt(mean(errors^2))
+
+cv2 # 2.20
+
+# for logistic model - interesting, didn't converge on values used above
+errors = vector()
+for(i in 1:nrow(dinos)) {
+  datause = dinos[-i,]
+  logistic_model <- nls(Mass ~ Mmax / (1 + exp(-r * (Age - Age0))),
+                      data = datause,
+                      start = list(Mmax = 29, r = 1, Age0 = 6))
+  errors[i] = dinos$Mass[i] - predict(logistic_model, data.frame(Age = dinos$Age[i]))
+}
+cv3 = sqrt(mean(errors^2))
+
+cv3 # 1.33
+```
+
+- Which model is best at predicting data, in terms of LOOCV?
+again it is the logistic model that is the best at predicting data
+
+- What is typical difference b/ween predicted values and observed values for 
+  best model?
+square root of mean squared errors is 1.33 for the best model, so this is a
+  'typical' difference between predicted and observed values
+
+- Does LOOCV yield same ranking of models as AIC?
+yes it does! this lends lots of support for the notion that the logistic model is
+  the best at modeling the age and size relationship of these dinos, even if we'd
+  like some refinement with the max size estimate
