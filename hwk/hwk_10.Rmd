@@ -5,5 +5,157 @@ date: "2025-04-28"
 output: html_document
 ---
 
+```{r}
+library(tidyverse)
+library(glmmTMB)
+library(car)
+library(ggeffects)
+library(DHARMa)
+library(performance)
+
+stinky <- read_csv('data/stinky.csv')
+```
 
 
+#1.
+
+analyze general spatial and temporal patterns of abundance. plot how abundance 
+  varies between sites, seasons, depths
+```{r}
+stinky$Site <- as.factor(stinky$Site)
+
+# first, what is dist. of stinky?
+stinky %>%
+  ggplot(aes(x = vvhA)) +
+  geom_histogram()
+# response var is possible zero-inflated
+
+# lots of variation between sites
+stinky %>%
+  ggplot(aes(x = Site, y = vvhA)) +
+  geom_boxplot()
+
+# more stinky during dry season
+stinky %>%
+  ggplot(aes(x = Season, y = vvhA)) +
+  geom_boxplot()
+
+# more stinky at the top of the water column
+stinky %>%
+  ggplot(aes(x = SampleDepth, y = vvhA)) +
+  geom_boxplot()
+```
+
+construct appropriate model that tests whether there are effects of these predictors,
+  interactions between them. figure out how to model response variable
+- likely will need to use zero-inflated
+- start with Poisson dist
+  - then assess overdispersion
+- then use neg binom, continue assessing
+```{r}
+# Poisson sig dispersion
+mod_stinky_pois <- glmmTMB(vvhA ~ Site + 
+                             Season + 
+                             SampleDepth +
+                             Site*Season +
+                             Site*SampleDepth +
+                             Season*SampleDepth, 
+                          data = stinky, 
+                          family = poisson)
+summary(mod_stinky_pois)
+
+Anova(mod_stinky_pois) # all have sig effect
+
+sim_res_model <- simulateResiduals(fittedModel = mod_stinky_pois)
+plot(sim_res_model) # significant deviation suggesting overdispersion
+check_overdispersion(mod_stinky_pois) # overdispersion detected
+
+plot(ggpredict(mod_stinky_pois, terms = c("Site", "Season", "SampleDepth")))
+```
+
+Neg binomial
+- b/c Poisson sig overdispersion
+- neg binom looks good! no need for zero-inflation!
+```{r}
+mod_stinky_nb <- glmmTMB(vvhA ~ Site + 
+                             Season + 
+                             SampleDepth +
+                             Site*Season +
+                             Site*SampleDepth +
+                             Season*SampleDepth, 
+                          data = stinky, 
+                          family = nbinom2)
+summary(mod_stinky_nb)
+
+Anova(mod_stinky_nb) # Site, Season, SampleDepth, Site*Season sig effects
+
+sim_res_model <- simulateResiduals(fittedModel = mod_stinky_nb)
+plot(sim_res_model) # looks like negbinom fits well! move forward with this
+check_overdispersion(mod_stinky_nb) # no overdispersion detected
+
+plot(ggpredict(mod_stinky_nb, terms = c("Site", "Season", "SampleDepth")))
+```
+
+what are magnitudes of modeled effects?
+- season has a large significant effect, lots more stinky in dry season
+- site appears to have a large significant effect, sites 6, 7 have much more stinky
+- depth appears to have an intermediate significant effect, more stinky at surface
+- site*season appears to have small significant effect, see some variation in 
+  season across sites, but for most sites, rainy season is lower
+
+what are interpretations of results so far?
+- it seems that season is the most important driver of hhvA, with significantly
+  more stinky in the dry season. there's also a lot of variation across the 
+  8 sampling sites, with 6 and 7 appearing to be especially high, even at the 
+  lower sampling depths, which have lower hhvA than the surface level.
+
+
+#2.
+
+authors only used Rainfall_5Day, AirTemp, 02Conc, Salinity, WaterTemp, Turbidity,
+  Chlorophyll, NOx, Silicate, POC, TotalP, Tyrosine.like, HIX, VisibleHumic.like
+  b/c lots of correlaton b/ween variables, these ones are supposed to be important
+
+scatterplot concentration vs. predictors to consider which predictors should be
+  transformed for use in linear model / generalized linear model. recall transformation
+  not about normality (predictors not assumed to follow any dist).
+  rather, tranformation useful for achieving linear relationships, and avoiding
+  extreme values that have outsized leverage on modeled relationship
+  
+make single predictor models for each of 14 predictors above
+  note in order to comapre models by AIC each model needs to
+  use same set of samples (rows) - means should remove any rows that include 
+  NAs for any of 14 predictors, or for response variable, before fitting any models
+
+which predictors, on their own, best explain concentration?
+
+if make AIC table of 14 models, what do Akaike weights look like?
+
+what does this mean?
+  
+what is downside of using single-predictor models in this context?
+  
+now, make one big model that contains all 14 predictors
+
+do marginal null hypothesis testing on predictors
+
+which seems important for explaining concentration?
+
+collectively, how much variation in concentration can be explained?
+
+what is potential downside of this approach to inference?
+
+now construct all possible models containing 14 predictors (can ignore interactions)
+  and recall R function that automates this process
+  
+which predictors consitently occur in most-supporting models?
+
+what are sums of Akaike weights for each predictor?
+
+plot fitted relationships from best model
+
+how do results compare to other approaches?
+
+finally! attempt interpretation of results
+
+what mechanisms could underlie strong correlations identified by analysis?
