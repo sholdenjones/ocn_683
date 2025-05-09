@@ -235,15 +235,6 @@ What are your interpretations of the results so far?
 
 #2.
 
-Now let’s compare the niches of the three groups to each other. Use a GAM 
-  including all groups simultaneously to simultaneously test three questions:
-  (a) Do the different kinds of microbes have different mean abundances?
-  (b) Do the different kinds of microbes have different average depth 
-      distributions (i.e., averaging over time)?
-  (c) Do the different kinds of microbes have different average seasonal 
-      dynamics (i.e., averaging over depths)?
-
-
 To fit GAM(s) including all three groups simultaneously you will need to convert 
   the data to ‘long’ format, where there is a column that contains all the 
   concentrations of all three types of microbes, and a second column that codes 
@@ -251,15 +242,68 @@ To fit GAM(s) including all three groups simultaneously you will need to convert
   other model predictors. You can convert to long format by hand using a 
   spreadsheet, or you can use a helpful function called pivot_longer() in the 
   package ‘tidyr’.
+```{r}
+cyto_long <- cyto %>%
+  pivot_longer(
+    cols = matches("sqrt_pro|hbact|sqrt_picoeuk"),
+    names_to = "Microbe",
+    values_to = "Abundance"
+  )
 
-  
+cyto_long$Microbe <- as.factor(cyto_long$Microbe)
+```
+
+Now let’s compare the niches of the three groups to each other. Use a GAM 
+  including all groups simultaneously to simultaneously test three questions:
+  (a) Do the different kinds of microbes have different mean abundances?
+    - Abundance ~ Microbe, not using s b/c not continuous
+  (b) Do the different kinds of microbes have different average depth 
+      distributions (i.e., averaging over time)?
+    - s(Press, by = Microbe)
+  (c) Do the different kinds of microbes have different average seasonal 
+      dynamics (i.e., averaging over depths)?
+    - s(Day, by = Microbe)
+```{r}
+super_model <- gam(Abundance ~ Microbe +
+                 s(press, by = Microbe) +
+                 s(day, by = Microbe),
+               data = cyto_long)
+
+gam.check(super_model) # residuals do not look good - uh oh!
+# says k may be too low, b/c close to edf
+summary(super_model) 
+
+# re-run with diff k value, set at 30, tried 20 but k still close to edf
+super_model <- gam(Abundance ~ Microbe +
+                 s(press, by = Microbe, k = 30) +
+                 s(day, by = Microbe, k = 30),
+               data = cyto_long)
+
+gam.check(super_model) # still don't like residuals
+summary(super_model) 
+# sig differences in abundance across three different microbe types (hbact highest)
+# hbact, sqrt_pro vary by depth, not sqrt_picoeuk
+# hbact, sqrt_pro vary by day, not sqrt_picoeuk
+```
+
 Now that you have fit models to test questions (a)-(c), make appropriate plots 
   and perform appropriate hypothesis tests. 
+```{r}
+plot(super_model)
+```
 
-  
 How do you intepret the results?
+- sig differences in abundance across three different microbe types (hbact highest)
+- hbact, sqrt_pro vary by depth, not sqrt_picoeuk
+- hbact, sqrt_pro vary by day, not sqrt_picoeuk
 
-
+looking at plots:
+- lots of variation across depth for hbact
+- no variation across depth for picoeuk
+- pro decreases as depth increases
+- lots of variation across day for hbact
+- no variation across day for picoeuk
+- effectively no variation across day for pro
 
 
 #3.
