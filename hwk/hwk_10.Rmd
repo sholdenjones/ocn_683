@@ -10,8 +10,10 @@ library(tidyverse)
 library(glmmTMB)
 library(car)
 library(ggeffects)
+library(MuMIn)
 library(DHARMa)
 library(performance)
+library(GGally)
 
 stinky <- read_csv('data/stinky.csv')
 ```
@@ -113,49 +115,268 @@ what are interpretations of results so far?
 #2.
 
 authors only used Rainfall_5Day, AirTemp, 02Conc, Salinity, WaterTemp, Turbidity,
-  Chlorophyll, NOx, Silicate, POC, TotalP, Tyrosine.like, HIX, VisibleHumic.like
+  Chlorophyll, NOx, Silicate, POC, TotalP, Tyrosine.like, HIX, VisibleHumic. likely
   b/c lots of correlaton b/ween variables, these ones are supposed to be important
 
 scatterplot concentration vs. predictors to consider which predictors should be
   transformed for use in linear model / generalized linear model. recall transformation
   not about normality (predictors not assumed to follow any dist).
-  rather, tranformation useful for achieving linear relationships, and avoiding
+  rather, transformation useful for achieving linear relationships, and avoiding
   extreme values that have outsized leverage on modeled relationship
+```{r}
+par(mfrow = c(2, 3))
+scatter.smooth(stinky$Rainfall_5Day, stinky$vvhA)
+scatter.smooth(stinky$AirTemp, stinky$vvhA)
+scatter.smooth(stinky$O2Conc, stinky$vvhA)
+scatter.smooth(stinky$Salinity, stinky$vvhA)
+scatter.smooth(stinky$WaterTemp, stinky$vvhA)
+scatter.smooth(stinky$Turbidity, stinky$vvhA)
+
+scatter.smooth(stinky$Chlorophyll, stinky$vvhA)
+scatter.smooth(stinky$NOx, stinky$vvhA) # outsized leverage
+scatter.smooth(stinky$Silicate, stinky$vvhA) # outsized leverage
+scatter.smooth(stinky$POC, stinky$vvhA) # outsized leverage
+scatter.smooth(stinky$TotalP, stinky$vvhA)
+scatter.smooth(stinky$'Tyrosine-like', stinky$vvhA) # outsized leverage
+scatter.smooth(stinky$'VisibleHumic-like', stinky$vvhA)
+scatter.smooth(stinky$HIX, stinky$vvhA)
+
+# log transform following predictors due to outsized leverage of outlier points
+stinky$log_NOx <- log(stinky$NOx)
+stinky$log_Silicate <- log(stinky$Silicate)
+stinky$log_POC <- log(stinky$POC)
+stinky$'log_Tyrosine-like' <- log(stinky$'Tyrosine-like')
+```
   
 make single predictor models for each of 14 predictors above
-  note in order to comapre models by AIC each model needs to
+  note in order to compare models by AIC each model needs to
   use same set of samples (rows) - means should remove any rows that include 
   NAs for any of 14 predictors, or for response variable, before fitting any models
+  
+prepare df for modeling predictors
+```{r}
+# first need to remove any rows that include NAs - simplify df as well
+variables <- c('vvhA', 'Rainfall_5Day', 'AirTemp', 'O2Conc', 'Salinity', 'WaterTemp',
+               'Turbidity', 'Chlorophyll', 'TotalP', 'log_NOx', 'log_Silicate',
+               'log_POC', 'log_Tyrosine-like', 'VisibleHumic-like', 'HIX')
+
+df <- stinky %>%
+  select(variables) 
+
+# this is a super annoying way to do this, but I'm on a plane with no internet rn
+df <- df %>%
+  filter(!is.na(vvhA)) %>%
+  filter(!is.na(Rainfall_5Day)) %>%
+  filter(!is.na(AirTemp)) %>%
+  filter(!is.na(O2Conc)) %>%
+  filter(!is.na(Salinity)) %>%
+  filter(!is.na(WaterTemp)) %>%
+  filter(!is.na(Turbidity)) %>%
+  filter(!is.na(Chlorophyll)) %>%
+  filter(!is.na(TotalP)) %>%
+  filter(!is.na(log_NOx)) %>%
+  filter(!is.na(log_Silicate)) %>%
+  filter(!is.na(log_POC)) %>%
+  filter(!is.na('log_Tyrosine-like')) %>%
+  filter(!is.na('VisibleHumic-like')) %>%
+  filter(!is.na(HIX))
+
+# annoying naming of variables, should have fixed earlier
+df$log_Tyrosine <- df$'log_Tyrosine-like'
+df$VisibleHumic <- df$'VisibleHumic-like'
+```
+
+14 models for 14 predictors
+```{r}
+# rainfall sig pos
+mod_Rainfall_5Day <- lm(vvhA ~ Rainfall_5Day, df)
+summary(mod_Rainfall_5Day)
+
+# air temp sig pos
+mod_AirTemp <- lm(vvhA ~ AirTemp, df)
+summary(mod_AirTemp)
+
+# O2Conc no effect
+mod_O2Conc <- lm(vvhA ~ O2Conc, df)
+summary(mod_O2Conc)
+
+# Salinity sig neg
+mod_Salinity <- lm(vvhA ~ Salinity, df)
+summary(mod_Salinity)
+
+# WaterTemp sig pos
+mod_WaterTemp <- lm(vvhA ~ WaterTemp, df)
+summary(mod_WaterTemp)
+
+# Turbidity no effect
+mod_Turbidity <- lm(vvhA ~ Turbidity, df)
+summary(mod_Turbidity)
+
+# Chlorophyll no effect
+mod_Chlorophyll <- lm(vvhA ~ Chlorophyll, df)
+summary(mod_Chlorophyll)
+
+# TotalP sig pos
+mod_TotalP <- lm(vvhA ~ TotalP, df)
+summary(mod_TotalP)
+
+# log_NOx sig pos
+mod_log_NOx <- lm(vvhA ~ log_NOx, df)
+summary(mod_log_NOx)
+
+# log_Silicate sig pos
+mod_log_Silicate <- lm(vvhA ~ log_Silicate, df)
+summary(mod_log_Silicate)
+
+# log_POC sig pos
+mod_log_POC <- lm(vvhA ~ log_POC, df)
+summary(mod_log_POC)
+
+# log_Tyrosine sig pos
+mod_log_Tyrosine <- lm(vvhA ~ log_Tyrosine, df)
+summary(mod_log_Tyrosine)
+
+# VisibleHumic sig pos
+mod_VisibleHumic <- lm(vvhA ~ VisibleHumic, df)
+summary(mod_VisibleHumic)
+
+# HIX no effect
+mod_HIX <- lm(vvhA ~ HIX, df)
+summary(mod_HIX)
+```
 
 which predictors, on their own, best explain concentration?
-
+- There are many predictors which on their own have a significant effect on vvhA.
+  These are; Rainfall_5Day, AirTemp, Salinity, WaterTemp, TotalP, log_NOx,  
+  log_Silicate, log_POC, log_Tyrosine, VisibleHumic
+  
 if make AIC table of 14 models, what do Akaike weights look like?
+- the model with log_NOx is the best performing (weight of .7, 2
+  delta better than next best). The model with Silicate is next best.
+
+make AIC weights
+```{r}
+models <- list(mod_Rainfall_5Day, mod_AirTemp, mod_O2Conc, mod_Salinity, 
+               mod_WaterTemp, mod_Turbidity, mod_Chlorophyll, mod_TotalP, 
+               mod_log_NOx, mod_log_Silicate, mod_log_POC, mod_log_Tyrosine, 
+               mod_VisibleHumic, mod_HIX)
+
+model_selection <- model.sel(models)
+print(model_selection)
+```
 
 what does this mean?
+- this means that our model selection process identified log_NOx as the most
+  important driver of vvhA for the variables assessed. It is also plausible that
+  Silicate may be the best model as the delta between AICs was less than 2,
+  although just barely!
   
 what is downside of using single-predictor models in this context?
+- we're making a lot of assumptions. We're assuming that none of these predictor
+  variables are interacting with each other. We've tried to address collinearity,
+  but we can't assess interaction with this setup. We also are assuming that these
+  variables are independent, and that we are able to identify the best model using
+  AIC. Probably most importantly, we're assuming that the relationship between the
+  response and predictor variables is simple enough that it can be modled with
+  just one predictor.
   
 now, make one big model that contains all 14 predictors
+```{r}
+big_model <- lm(vvhA ~ Rainfall_5Day + AirTemp + O2Conc + Salinity + 
+                 WaterTemp + Turbidity + Chlorophyll + TotalP + log_NOx + 
+                 log_Silicate + log_POC + log_Tyrosine + VisibleHumic + HIX, 
+                data = df, na.action = na.pass)
+summary(big_model)
+```
 
 do marginal null hypothesis testing on predictors
+```{r}
+Anova(big_model)
+```
 
 which seems important for explaining concentration?
+- log_NOx, log_POC, VisibleHumic, and HIX appear to have important effects on
+  vvhA concentration
 
 collectively, how much variation in concentration can be explained?
+- The R squared value is 0.53, suggesting that 53% of the variation in the data
+  is explained by the big model
 
 what is potential downside of this approach to inference?
+- the more predictors that we add (14!), the more likely we are to uncover a false
+  significant relationship
 
 now construct all possible models containing 14 predictors (can ignore interactions)
   and recall R function that automates this process
+```{r}
+# use dredge
+dredge_model <- dredge(big_model) 
+
+# model selection, filter by weight > 0.005
+dredge_model_sel <- model.sel(dredge_model) 
+
+refined_dredge <- dredge_model_sel %>%
+  filter(weight > 0.005)
+
+refined_dredge
+```
   
 which predictors consitently occur in most-supporting models?
+- consistently in top models: HIX, log_NOx, log_POC, Rnf_5Dy, Sln, TtP, Vsh
 
 what are sums of Akaike weights for each predictor?
+```{r}
+sw(dredge_model)
+```
 
 plot fitted relationships from best model
+```{r}
+# define best_model
+best_model <- lm(vvhA ~ AirTemp + HIX + log_NOx + log_POC + log_Tyrosine +
+                        Rainfall_5Day + Salinity + TotalP + VisibleHumic, 
+                      data = df)
+summary(best_model) # everything sig
+```
+
+```{r}
+# plot fitted effects for 9 models
+plot(ggeffect(best_model, terms = 'AirTemp')) # pos
+
+plot(ggeffect(best_model, terms = 'HIX')) # neg
+
+plot(ggeffect(best_model, terms = 'log_NOx')) # pos
+
+plot(ggeffect(best_model, terms = 'log_POC')) # pos
+
+plot(ggeffect(best_model, terms = 'log_Tyrosine')) # neg
+
+plot(ggeffect(best_model, terms = 'Rainfall_5Day')) # pos
+
+plot(ggeffect(best_model, terms = 'Salinity')) # neg
+
+plot(ggeffect(best_model, terms = 'TotalP')) # neg
+
+plot(ggeffect(best_model, terms = 'VisibleHumic')) # pos
+```
 
 how do results compare to other approaches?
-
+- from the best model, only log_NOx, log_POC, VisibleHumic, and HIX appear to 
+  have important effects on vvhA concentration
+- with the single predictor approach, we found 10 variables to have a sig effect
+  on vvhA!
+  
 finally! attempt interpretation of results
+- predictors that we feel confident about having an important effect on vvhA are;
+  HIX  log_NOx log_POC Salinity TotalP AirTemp VisibleHumic Rainfall_5Day
+- There are many other variables which appear to have a significant effect on vvhA 
+  if examined individually, but these appear to be less important than the above,
+  which were repeatedly in top performing candidate models.
 
 what mechanisms could underlie strong correlations identified by analysis?
+- It would make sense that increased Rainfall would drive other predictors. Would
+  be important to test the true independence of rainfall and other predictors. 
+- Increased rainfall is known to decrease salinity, increasing vvhA. Perhaps 
+  increased rainfall also decreases HIX which was an important and consistent predictor.
+- Although I'm not a marine biologist and don't have internet access to learn more,
+  I would expect rainfall to have wide-ranging effects on nutrient and abiotic 
+  conditions on the Ala Wai Canal, a number of which are important for vvhA.

@@ -1,0 +1,274 @@
+---
+title: "hwk_11"
+author: "Holden Jones"
+date: "2025-05-09"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(mgcv)
+
+cyto <- read_csv('data/HOT_cyto_counts_edit.csv') %>%
+  select(!'...1')
+
+mlds <- read_csv('data/hot_mlds.csv')
+```
+
+We will focus only on pro, hbact, and picoeuk, and explore how the niches of
+  these three groups differ from one another.
+
+
+"botid" (bottle ID), "date" (date, in mmddyy format), "press" (pressure in decibars) 
+  "chl" (fluorometric chlorophyll a concentration, in micrograms L-1), "hbact" 
+  (heterotrophic bacteria concentration, in 105 cells mL-1), "pro" (Prochlorococcus 
+  concentration, in 105 cells mL-1), "syn" (Synechococcus concentration, in 105 
+  cells mL-1), "picoeuk" (photosynthetic picoeukaryote concentration, in 105 cells 
+  mL-1), and "cruise" (cruise ID). Note that pressure in decibars is approximately 
+  equal to depth in meters (i.e., depth of the sampling device is measured using a 
+  pressure sensor).
+
+#1. 
+
+To create a day of the year predictor you will need to 
+  first convert the ‘date’ column to date format, and then make a new column 
+  that extracts the day of the year from the date column. There are helpful 
+  functions in the package ‘lubridate’ that will do these steps for you.
+```{r}
+# convert date column to date format - then extract day of year from date column
+cyto <- cyto %>%
+  mutate(date = mdy(date),
+         day = yday(date)
+         )
+```
+
+
+When fitting the 2D smoother for each type of microbe, consider how the response 
+  variable should be modeled (transformed or not, normal or non-normal). You can 
+  see the probability distributions available for the gam() function in package 
+  mgcv by looking at the help file titled ‘family.mgcv’.
+- assess normality
+- assess potential leverage of outlier points
+```{r}
+# look at dist for each of three response variables
+hist(cyto$pro) # bimodal? square root transform - possible high leverage to right
+hist(sqrt(cyto$pro)) # this still isn't normal, dist appears more even now tho
+hist(log(cyto$pro)) # heavily skewed, don't use
+
+hist(cyto$hbact) # normal - all good
+
+hist(cyto$picoeuk) # Poisson? square root transform
+hist(sqrt(cyto$picoeuk)) # now appears normal, looks good!
+```
+
+incorporate response variable transformations
+```{r}
+# square root transform pro
+cyto$sqrt_pro <- sqrt(cyto$pro)
+
+# square root transform picoeuk
+cyto$sqrt_picoeuk <- sqrt(cyto$picoeuk)
+```
+
+For each of the three groups of microbes (pro, hbact, and picoeuk), fit a 2D 
+  smoother that characterizes how abundance changes with depth and with day of 
+  the year (i.e., from day 1 to day 365 or 366). 
+  
+sqrt_pro_gam
+```{r}
+# sqrt_pro gam
+gam_sqrt_pro = gam(sqrt_pro ~ s(press, day), data = cyto) # smoothing off press, day
+
+gam.check(gam_sqrt_pro) # residuals look perfect, k = 29
+
+summary(gam_sqrt_pro) # edf 27.4 - 90% dev explained
+
+plot(gam_sqrt_pro) # not sure how to interpret these
+# large peak in sqrt_pro around press of 70 and from roughly March to Oct?
+```
+
+hbact gam
+```{r}
+# hbact gam
+gam_hbact = gam(hbact ~ s(press, day), data = cyto) # smoothing off press, day
+
+gam.check(gam_hbact) # residuals look great, k = 29
+
+summary(gam_hbact) # edf 22.9 - 74% dev explained
+
+plot(gam_hbact) # small peak for hbact press of 30, in roughly Sep
+```
+
+sqrt_picoeuk_gam
+```{r}
+# sqrt_picoeuk gam
+gam_sqrt_picoeuk = gam(sqrt_picoeuk ~ s(press, day), data = cyto) # smoothing off press, day
+
+gam.check(gam_sqrt_picoeuk) # residuals look good, k = 29
+
+summary(gam_sqrt_picoeuk) # edf 24.3 - only 52% dev explained
+
+plot(gam_sqrt_picoeuk) # not sure how to interpret these
+# several small peaks in sqrt_picoeuk - deep early, shallow mid, deep late in year
+```
+
+Consider whether the basis dimension needs to be increased beyond the default value.
+- default edf values: sqrt_pro: 27.4, hbact: 22.9, sqrt_picoeuk: 24.3
+- default k values for all: 29
+- double k for each gam
+
+double k for sqrt_pro
+```{r}
+gam_sqrt_pro_k = gam(sqrt_pro ~ s(press, day, k = 60), data = cyto) 
+
+gam.check(gam_sqrt_pro_k) # residuals look good, k = 59 - diff than default
+
+summary(gam_sqrt_pro_k) # edf 38.7 - 90% dev explained
+
+plot(gam_sqrt_pro_k)
+```
+
+note that doubling the k value for sqrt_pro gam produces different result
+- suggests that default settings did not allow for enough complexity in the model
+- although the plot appears identical?
+
+double k for hbact
+```{r}
+gam_hbact_k = gam(hbact ~ s(press, day, k = 60), data = cyto)
+
+gam.check(gam_hbact_k) # residuals look great, k = 59
+
+summary(gam_hbact_k) # edf 27.8 - 74% dev explained
+
+plot(gam_hbact_k) # small peak for hbact press of 30, in roughly Sep
+```
+
+same as above, doubling k changes the edf value suggesting default settings didn't 
+  adequately account for necessary complexity in the model -  but the plot is
+  pretty much identical
+
+double k for sqrt_picoeuk
+```{r}
+gam_sqrt_picoeuk_k = gam(sqrt_picoeuk ~ s(press, day, k = 60), data = cyto) 
+
+gam.check(gam_sqrt_picoeuk_k) # residuals look good, k = 59 - diff than default
+
+summary(gam_sqrt_picoeuk_k) # edf 37.7 - 54% dev explained - basically the same
+
+plot(gam_sqrt_picoeuk_k)
+```
+
+in this case it doesn't appear that doubling k did much for the model
+- the final edf value was basically equal to the default settings
+- and again, plot appears almost identical to default settings
+  
+Plot the fitted smoother in a way that is visually appealing. 
+```{r}
+plot(gam_sqrt_pro, select = 1, scheme = 2, lwd = 2)
+
+plot(gam_hbact, select = 1, scheme = 2, lwd = 2)
+
+plot(gam_sqrt_picoeuk, select = 1, scheme = 2, lwd = 2)
+```
+
+Finally, figure out how to test whether the relationship between abundance and 
+  depth changes over time or not. 
+- already have a 2D smoother which models the interaction between two vars
+- so now create 1D smoother which would not incorporate interaction
+- then compare R2 of these two models for each response var
+```{r}
+# sqrt_pro 1D gam
+gam_sqrt_pro_1 = gam(sqrt_pro ~ s(press) + s(day), data = cyto)
+
+gam.check(gam_sqrt_pro_1) # residuals look perfect, k = 9
+
+summary(gam_sqrt_pro_1) # edf 27.4 - 90% dev explained
+
+plot(gam_sqrt_pro_1) # not sure how to interpret these
+# large peak in sqrt_pro around press of 70 and from roughly March to Oct?
+```
+
+
+```{r}
+# hbact gam
+gam_hbact = gam(hbact ~ s(press, day), data = cyto) # smoothing off press, day
+
+gam.check(gam_hbact) # residuals look great, k = 29
+
+summary(gam_hbact) # edf 22.9 - 74% dev explained
+
+plot(gam_hbact) # small peak for hbact press of 30, in roughly Sep
+```
+
+```{r}
+# sqrt_picoeuk gam
+gam_sqrt_picoeuk = gam(sqrt_picoeuk ~ s(press, day), data = cyto) # smoothing off press, day
+
+gam.check(gam_sqrt_picoeuk) # residuals look good, k = 29
+
+summary(gam_sqrt_picoeuk) # edf 24.3 - only 52% dev explained
+
+plot(gam_sqrt_picoeuk) # not sure how to interpret these
+# several small peaks in sqrt_picoeuk - deep early, shallow mid, deep late in year
+```
+
+  
+What are your interpretations of the results so far?
+
+
+
+#2.
+
+Now let’s compare the niches of the three groups to each other. Use a GAM 
+  including all groups simultaneously to simultaneously test three questions:
+  (a) Do the different kinds of microbes have different mean abundances?
+  (b) Do the different kinds of microbes have different average depth 
+      distributions (i.e., averaging over time)?
+  (c) Do the different kinds of microbes have different average seasonal 
+      dynamics (i.e., averaging over depths)?
+
+
+To fit GAM(s) including all three groups simultaneously you will need to convert 
+  the data to ‘long’ format, where there is a column that contains all the 
+  concentrations of all three types of microbes, and a second column that codes 
+  which microbe was counted in that row, as well as additional columns for the 
+  other model predictors. You can convert to long format by hand using a 
+  spreadsheet, or you can use a helpful function called pivot_longer() in the 
+  package ‘tidyr’.
+
+  
+Now that you have fit models to test questions (a)-(c), make appropriate plots 
+  and perform appropriate hypothesis tests. 
+
+  
+How do you intepret the results?
+
+
+
+
+#3.
+
+Finally, let’s investigate how abundances of the three groups at shallower depths 
+  correlate with mixed layer depth (an index of stratification) and chlorophyll 
+  a concentration. The second attached file, hot_mlds.csv, contains the average 
+  mixed layer depth for each HOT cruise. You’ll need to merge the information in 
+  this file with the dataset you have been analyzing.
+
+  
+Using only data from the top 45 meters, how does the concentration of each group 
+  of microbes vary with (a) mixed layer depth and (b) Chl a concentration? Test 
+  whether the three types of microbes exhibit different relationships with the 
+  two predictors. 
+
+  
+Use appropriate GAM(s), 
+
+
+hypothesis tests, 
+
+
+and smoother plots to assess these questions.
+
+
+
