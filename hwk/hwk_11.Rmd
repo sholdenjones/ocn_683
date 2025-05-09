@@ -177,45 +177,60 @@ Finally, figure out how to test whether the relationship between abundance and
 - already have a 2D smoother which models the interaction between two vars
 - so now create 1D smoother which would not incorporate interaction
 - then compare R2 of these two models for each response var
+
+sqrt_pro - looks constant throughout the year, intermediate depth peak
+- 2D model fits marginally better
 ```{r}
 # sqrt_pro 1D gam
 gam_sqrt_pro_1 = gam(sqrt_pro ~ s(press) + s(day), data = cyto)
 
-gam.check(gam_sqrt_pro_1) # residuals look perfect, k = 9
+gam.check(gam_sqrt_pro_1) # residuals look good, k = 9
 
-summary(gam_sqrt_pro_1) # edf 27.4 - 90% dev explained
+summary(gam_sqrt_pro_1) # 89% dev explained
 
-plot(gam_sqrt_pro_1) # not sure how to interpret these
-# large peak in sqrt_pro around press of 70 and from roughly March to Oct?
+plot(gam_sqrt_pro_1)
+# for sqrt_pro, doesn't look like day has a large impact
+# but definitely see peak of sqrt_pro at intermediate depth, then drop off
 ```
 
-
+hbact - see two peaks throughout the year, intermediate depth peak
+- 2D model fits marginally better
 ```{r}
-# hbact gam
-gam_hbact = gam(hbact ~ s(press, day), data = cyto) # smoothing off press, day
+# hbact 1D gam
+gam_hbact_1 = gam(hbact ~ s(press) + s(day), data = cyto)
 
-gam.check(gam_hbact) # residuals look great, k = 29
+gam.check(gam_hbact_1) # residuals look great, k = 9
 
-summary(gam_hbact) # edf 22.9 - 74% dev explained
+summary(gam_hbact_1) # 71% dev explained
 
-plot(gam_hbact) # small peak for hbact press of 30, in roughly Sep
+plot(gam_hbact_1)
+# two peaks for day
+# intermediate depth peak
 ```
 
+sqrt_picoeuk - sees much deeper peak than other species, lots of var throughout year
+- again, 2D model fits marginally better, although neither fit well compared to
+  other sp.
 ```{r}
-# sqrt_picoeuk gam
-gam_sqrt_picoeuk = gam(sqrt_picoeuk ~ s(press, day), data = cyto) # smoothing off press, day
+# sqrt_picoeuk 1D gam
+gam_sqrt_picoeuk_1 = gam(sqrt_picoeuk ~ s(press) + s(day), data = cyto)
 
-gam.check(gam_sqrt_picoeuk) # residuals look good, k = 29
+gam.check(gam_sqrt_picoeuk_1) # residuals look good, k = 9
 
-summary(gam_sqrt_picoeuk) # edf 24.3 - only 52% dev explained
+summary(gam_sqrt_picoeuk_1) # only 48% dev explained
 
-plot(gam_sqrt_picoeuk) # not sure how to interpret these
-# several small peaks in sqrt_picoeuk - deep early, shallow mid, deep late in year
+plot(gam_sqrt_picoeuk_1)
+# see peak much deeper than other species
+# lots of small spikes throughout the year
 ```
 
-  
 What are your interpretations of the results so far?
-
+- Different species have different abundance patterns across depth and time
+- pro and hbact peak at intermediate depths, around 75 (m?), picoeuk peaks
+  deeper, at around 100 (m?)
+- pro appears relatively constant throughout the year, hbact has two distinct
+  abundance peaks throughout the year (~May and September), picoeuk has four
+  abundance peaks throughout the year.
 
 
 #2.
