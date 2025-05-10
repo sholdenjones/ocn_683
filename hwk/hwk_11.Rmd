@@ -313,21 +313,73 @@ Finally, let’s investigate how abundances of the three groups at shallower dep
   a concentration. The second attached file, hot_mlds.csv, contains the average 
   mixed layer depth for each HOT cruise. You’ll need to merge the information in 
   this file with the dataset you have been analyzing.
-
+- run join_by on key
+- I guess crn is cruise? No consistent key - poor data management practices!
+```{r}
+# rename crn to cruise
+mlds$cruise <- mlds$crn
   
-Using only data from the top 45 meters, how does the concentration of each group 
-  of microbes vary with (a) mixed layer depth and (b) Chl a concentration? Test 
-  whether the three types of microbes exhibit different relationships with the 
-  two predictors. 
+joined_df <- cyto_long %>%
+  left_join(mlds, by = 'cruise')
+```
 
+Using only data from the top 45 meters
+
+filter to only retain top 45 m
+```{r}
+joined_df <- joined_df %>%
+  filter(press <= 45)
+
+hist(joined_df$press)
+```
+
+how does the concentration of each group of microbes vary with (a) mixed layer 
+  depth and (b) Chl a concentration? Test whether the three types of microbes 
+  exhibit different relationships with the two predictors. 
+- s(mean, by = Microbe) + s(chl, by = Microbe)
+
+compare to model with 1D smoothers
+- s(mean) + s(chl)
   
-Use appropriate GAM(s), 
+Use appropriate GAM(s), hypothesis tests, and smoother plots to assess these questions.
 
+mlds_2d model
+```{r}
+mlds_2d <- gam(Abundance ~ Microbe + s(mean, by = Microbe) +
+                 s(chl, by = Microbe),
+               data = joined_df)
 
-hypothesis tests, 
+gam.check(mlds_2d) # don't like residuals at all
+summary(mlds_2d) # explains 97% deviation
+plot(mlds_2d)
+# hbact sig variation by mean and chl, not for the others
+```
 
+mlds_1d model
+```{r}
+mlds_1d <- gam(Abundance ~ s(mean) + s(chl),
+               data = joined_df)
 
-and smoother plots to assess these questions.
+gam.check(mlds_1d) # residuals look horrible
+summary(mlds_1d)
+plot(mlds_1d)
+# no sig relationships between abundance across species and depth, chlorophyll
+```
 
+from 2d model
+- explains 97% variation
+- hbact varies by mixed layer depth (several peaks) and chlorophyll a 
+  concentration (increases)
+- neither sqrt_pro or sqrt_picoeuk vary by either depth or chlorophyll a
 
+from 1d model
+- wow! only explains .19% of variation
+- this model fits horribly
+- don't find any relationship between abundance and either depth or chlorophyll
 
+So yes, the concentration varies of different microbe types varies differently 
+  according to depth and chlorophyll concentration
+- this is driven by hbact, which significantly varies by both variables
+- the model accounting for differences across microbe types was amazing (~98% R2),
+  whereas the model that didn't allow for different microbes to respond differently
+  was horrible (<1% R2)
