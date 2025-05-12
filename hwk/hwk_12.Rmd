@@ -6,5 +6,207 @@ output: html_document
 ---
 
 
+```{r}
+library(tidyverse)
+library(lme4)
+library(sjPlot)
+library(MuMIn)
+library(DHARMa)
+library(glmmTMB)
+library(lmerTest)
 
+island <- read_csv('data/cabral_island_data.csv') %>%
+  select(!'...1')
 
+arch <- read_csv('data/cabral_arch_data.csv') %>%
+  select(!'...1') %>%
+  slice(1:23)
+```
+
+data naturally organized into groups (archipelagoes), account for this structure
+- non-independence in the model
+- need archipelago random effect to avoid pseudoreplicating predictors defined
+  at archipelago scale
+  
+Make a model with species richness as the response, and with a random effect for 
+  Archipelago. Species richness could be modeled as discrete count data (e.g., 
+  a negative binomial distribution), but we’ll finish covering GLMMs later; for 
+  now you can use log(Richness+1) to get a pretty normal looking response.
+```{r}
+island$log_richness <- log(island$Species + 1)
+
+hist(island$log_richness) # great, looks normal
+```
+
+```{r}
+mod_rich_arch <- lmer(log_richness ~ (1|Archipelago), data = island)
+summary(mod_rich_arch)
+ranef(mod_rich_arch)
+```
+
+What proportion of the variation in species richness occurs at the archipelago 
+  scale, and what proportion occurs within archipelagoes? Which archipelagoes 
+  are particularly diverse, and which are depauperate?  
+- 0.64 variance at archipelagoe level
+- 0.82 variance within archipelagoes
+- particularly diverse; Canaries, Balearic
+- particularly depauperate; Phoenix, Iles Crozet
+
+Now let’s think about the six predictors. Make some exploratory plots of the 
+  effect of each variable on richness, plotted at the appropriate scale. You’ll 
+  need to merge the datasets. Think about which predictors might need to be 
+  transformed for use in a linear model.
+  
+merge df
+```{r}
+df <- left_join(arch, island, by = 'Archipelago')
+```
+
+exploratory plots for each var against log_richness
+```{r}
+par(mfrow = c(3, 2))
+plot(df$number.islands, df$log_richness) # maybe transform
+plot(df$distance, df$log_richness)
+plot(df$age, df$log_richness)
+plot(df$Area, df$log_richness) # transform
+plot(df$Elev, df$log_richness) # transform
+plot(df$Temp, df$log_richness)
+```
+
+transform Elev and Area - huge range for these vars w/ big outliers
+- also can transform number.islands
+```{r}
+plot(log(df$Area + 1), df$log_richness) # looks good, clear positive relationship
+plot(log(df$Elev + 1), df$log_richness) # looks good, clear positive relationship
+plot(log(df$number.islands + 1), df$log_richness) # more uniform, no clear relationship
+```
+
+predictor variable transformation in df
+```{r}
+df$log_area <- log(df$Area + 1)
+df$log_elev <- log(df$Elev + 1)
+df$log_islands <- log(df$number.islands + 1)
+
+hist(df$log_area) # very normal dist.
+hist(df$log_elev) # not perfect normal dist. but prob okay?
+hist(df$log_islands) # now close to normal dist.
+```
+
+Construct mixed model(s) that test the roles of the six predictors in explaining 
+  species richness. Plot fitted (fixed) effects as well as random effect estimates, 
+  plus model diagnostics. 
+  
+```{r}
+mod_rich_full <- lmer(log_richness ~ log_area + log_elev + log_islands +
+                        distance + age + Temp +
+                        (1|Archipelago), data = df)
+summary(mod_rich_full)
+```
+
+fixed effects
+```{r}
+plot_model(mod_rich_full, type = 'est')
+# estimate for log area, log elev, temp doesn't overlap 0
+```
+
+plot random effects
+```{r}
+plot_model(mod_rich_full, type = 're')
+```
+
+model diagnostics
+```{r}
+sim_res <- simulateResiduals(mod_rich_full)
+plot(sim_res)
+# observed vs. expected plot looks good
+# quantile deviations detected, adjusted quantile test significant
+
+plot_model(mod_rich_full, type = 'diag')
+# no clear scary patterns here, residual distribution almost perfectly normal
+```
+
+Calculate how much variation the predictors explain, at the two different scales 
+  in the data (island and archipelago)? I.e., present R2 values for the two scales. 
+  Also, how much of the total variation have they explained, according to R2GLMM(m)?
+- conditional R2 of .85 means the full model (w/ re) explained 85% of variation
+- marginal R2 of .55 means the fixed effects (at island scale) explained 55% of
+  variation
+```{r}
+r2_values <- r.squaredGLMM(mod_rich_full)
+
+print(r2_values)
+```
+
+Use appropriate hypothesis tests (as described in lecture) to test the role of 
+  the different predictors. 
+```{r}
+anova(mod_rich_full)
+# no idea why I'm not getting p-values for this...
+
+summary(mod_rich_full)
+```
+  
+How do you interpret the results of these tests, and 
+  the effects plots, in light of hypotheses for what controls species richness 
+  in islands and archipelagos? What are the denominator degrees of freedom for 
+  each predictor? This is essentially telling you how much replication there is 
+  for that predictor, minus the number of parameters for that predictor. Do the
+  denominator df make sense? Why or why not?
+- I have no idea why anova(mod_rich_full) is not displaying p-values for me...
+- but, after looking at the effects plots, I suspect that log area, log elevation,
+  and temperature all have significant, positive effects on log species richness.
+- This is supported by the massive f-value for log_area, and the large f-value
+  for temperature. Perhaps log elevation is not actually a significant predictor,
+  judging by it's pedestrian F-value. Really wish I had those p-values and the 
+  time to troubleshoot this code!
+- there's a bug somewhere in my code (perhaps b/c I recently updated R?) preventing
+  me from seeing the denominator degrees of freedom. Wish I could tell you!
+
+Is the model we’ve used the best model? Often I just stick with one big model 
+  when the ratio of data to parameters is pretty good. But one might prefer to 
+  find the best model(s), while accounting for model selection uncertainty. Use 
+  AICc in some capacity to assess which predictors are important, what the ‘best’ 
+  model is, and how sure you are about what the best model is. The details of 
+  how you do it are up to you, as long as it seems justifiable. Remember to do 
+  REML=FALSE for comparing models.
+```{r}
+# full
+mod_rich_full <- lmer(log_richness ~ log_area + log_elev + log_islands +
+                        distance + age + Temp +
+                        (1|Archipelago), data = df, REML = FALSE)
+
+mod_rich_no_area <- lmer(log_richness ~ log_elev + log_islands +
+                        distance + age + Temp +
+                        (1|Archipelago), data = df, REML = FALSE)
+
+mod_rich_no_elev <- lmer(log_richness ~ log_area + log_islands +
+                        distance + age + Temp +
+                        (1|Archipelago), data = df, REML = FALSE)
+
+mod_rich_no_temp <- lmer(log_richness ~ log_area + log_elev + log_islands +
+                        distance + age +
+                        (1|Archipelago), data = df, REML = FALSE)
+
+mod_rich_no_dist <- lmer(log_richness ~ log_area + log_elev + log_islands +
+                        age + Temp +
+                        (1|Archipelago), data = df, REML = FALSE)
+
+mod_rich_no_age <- lmer(log_richness ~ log_area + log_elev + log_islands +
+                        distance + Temp +
+                        (1|Archipelago), data = df, REML = FALSE)
+
+mod_rich_no_island <- lmer(log_richness ~ log_area + log_elev +
+                        distance + age + Temp +
+                        (1|Archipelago), data = df, REML = FALSE)
+
+arrange(AICc(
+  mod_rich_full, mod_rich_no_area, mod_rich_no_elev, mod_rich_no_temp,
+  mod_rich_no_dist, mod_rich_no_age, mod_rich_no_island), AICc)
+```
+
+Probably fine to stick with the full model here - essentially no difference in AIC
+  between the full model, the model without island, or the model without age.
+  You could remove these but it doesn't make a huge difference so probably
+  best to just retain these predictors to avoid any potential headaches with 
+  justifying their removal.
+  
