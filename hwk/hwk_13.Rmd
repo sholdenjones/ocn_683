@@ -1,0 +1,162 @@
+---
+title: "hwk_13"
+author: "Holden Jones"
+date: "2025-05-14"
+output: html_document
+---
+
+
+```{r}
+library(tidyverse)
+library(lme4)
+library(ggeffects)
+library(sjPlot)
+
+ohia <- read_csv('data/ohia_merged.csv')
+```
+
+
+#1.
+
+
+Using the seedlings that were harvested after the press drought treatment, 
+  analyze how seedling height varies among treatments and populations. 
+  
+subset only harvested seedlings
+```{r}
+harvest <- ohia %>%
+  filter(Fate == "harvest")
+```
+
+Be sure to include Block in your models, and think about which terms in the model 
+  should be random effects, which should be fixed effects, which should be 
+  fixed:random interactions, and which should be fixed:fixed interactions 
+  (you will need all four).
+- height as response variable
+- block definitely as a random effect
+- drought definitely as fixed effect
+- population definitely as fixed effect
+- drought and population as interaction
+  
+first, look at dist. of response variable
+```{r}
+hist(harvest$Height) # close to normal, long tail
+```
+
+Specifically, set up models to test whether populations differ in height, whether 
+  the press drought treatment affects height, and whether populations differ in 
+  how press drought affects height.
+```{r}
+mod_height_1 <- lmer(Height ~ Drought + 
+                     (Drought | Population) + 
+                     (1 | Block), 
+                   data = harvest
+                   )
+summary(mod_height_1)
+```
+  
+Make appropriate plots of model results and describe the magnitude of any 
+  apparent relationships.
+```{r}
+plot(ggpredict(mod_height_1, terms = c("Drought"))) 
+# drought has no impact on height
+plot_model(mod_height_1, type = "re") 
+# population v small impact, Poa, Kua diff
+# block has no impact on height - this is good!
+```
+
+Next, set up models to test whether historical rainfall at a site predicts the 
+  height of seedlings, and whether historical rainfall at a site predicts the 
+  effect of press drought on height. 
+```{r}
+mod_height_2 <- lmer(Height ~ MAR * Drought + 
+                    (1|Population) + (1 | Block), 
+                    data = harvest)
+summary(mod_height_2)
+```
+
+Make appropriate plots of model results and describe the magnitude of any 
+  apparent relationships.
+```{r}
+plot(ggpredict(mod_height_2, terms = c("MAR", "Drought")))
+# no correlation between historical rainfall and height
+# no sig difference in this relationship for control vs. drought
+plot_model(mod_height_2, type = "re")
+# only Poamoho 2 sig higher height, not by much
+# block I barely sig taller than the others - probably not meaningful
+```
+  
+Finally, set up models to test whether historical evapotranspiration at a site 
+  predicts the height of seedlings, and whether historical evapotranspiration at 
+  a site predicts the effect of press drought on height. 
+```{r}
+mod_height_3 <- lmer(Height ~ MET * Drought + 
+                    (1|Population) + (1 | Block), 
+                    data = harvest)
+summary(mod_height_3)
+```
+  
+Make appropriate plots of model results and describe the magnitude of any 
+  apparent relationships.
+```{r}
+plot(ggpredict(mod_height_3, terms = c("MET", "Drought")))
+# no correlation between evapotranspiration and height
+# no sig difference in this relationship for control vs. drought
+plot_model(mod_height_3, type = "re")
+# no random effect difference for population
+# no difference for block here
+```
+  
+How do you interpret the results?
+- drought treatment has no significant impact on height
+- Neither evapotranspiration or rainfall have a significant effect on height,
+  regardless of drought treatment
+- There are some differences between populations in height, notably Kuakola and 
+  Puamoho 2 populations producing significantly taller seedlings
+- Block likely has no impact on height, which is good (note small sig higher
+  for Block 1 in the 2nd model)
+
+
+#2.
+
+Be sure to think about what the appropriate probability distribution is for the 
+  response variable. 
+
+Using the seedlings that were fated to be harvested after the press drought 
+  treatment, analyze how survival during the press drought is affected by the 
+  various potential predictors. Specifically, set up models to test whether 
+  populations vary in probability of mortality (i.e., the response column DEAD), 
+  whether the press drought treatment affects mean mortality, and whether 
+  populations vary in how mortality is affected by the press drought treatment. 
+  
+Next, set up models to test whether historical rainfall at a site predicts 
+  mortality, and whether historical rainfall at a site predicts the effect of 
+  press drought on mortality. 
+  
+Finally, set up models to test whether historical evapotranspiration at a site 
+  predicts mortality, and whether historical evapotranspiration at a site predicts 
+  the effect of press drought on mortality. 
+
+How do you interpret the results?
+
+
+#3.
+
+Using the seedlings that were fated for the terminal drought experiment 
+  (i.e., the seedlings that were not harvested), analyze how longevity during 
+  terminal drought is affected by the various potential predictors. Specifically, 
+  set up models to test whether populations vary in longevity, whether the press 
+  drought treatment affects longevity, and whether populations vary in how 
+  longevity is affected by the press drought treatment. 
+  
+Next, set up models to test whether historical rainfall at a site predicts 
+  longevity, and whether historical rainfall at a site predicts the effect of 
+  press drought on longevity.
+  
+Finally, set up models to test whether historical evapotranspiration at a site 
+  predicts longevity, and whether historical evapotranspiration at a site predicts 
+  the effect of press drought on longevity. 
+  
+How do you interpret the results?
+
+
