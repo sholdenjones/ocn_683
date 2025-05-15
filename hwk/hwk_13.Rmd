@@ -119,44 +119,156 @@ How do you interpret the results?
 
 #2.
 
-Be sure to think about what the appropriate probability distribution is for the 
-  response variable. 
-
 Using the seedlings that were fated to be harvested after the press drought 
   treatment, analyze how survival during the press drought is affected by the 
-  various potential predictors. Specifically, set up models to test whether 
-  populations vary in probability of mortality (i.e., the response column DEAD), 
-  whether the press drought treatment affects mean mortality, and whether 
-  populations vary in how mortality is affected by the press drought treatment. 
+  various potential predictors. 
   
+Be sure to think about what the appropriate probability distribution is for the 
+  response variable. 
+- survival as response variable going to be binomial dist.
+```{r}
+hist(harvest$Dead)
+```
+
+Specifically, set up models to test whether populations vary in probability of 
+  mortality (i.e., the response column DEAD), whether the press drought treatment 
+  affects mean mortality, and whether populations vary in how mortality is 
+  affected by the press drought treatment. 
+```{r}
+mod_dead_1 <- glmer(Dead ~ Drought + (Drought | Population) + (1| Block), 
+                 data = harvest, 
+                 family = binomial)
+summary(mod_dead_1) # sig effect of drought
+```
+
+effects plots
+```{r}
+plot(ggpredict(mod_dead_1, terms = "Drought"))
+# higher mortality in drought treatment
+plot_model(mod_dead_1, type = "re")
+# doesn't seem like any difference in effect of drought by population
+# does seem to be some differences in mortality across blocks - uh oh
+```
+
 Next, set up models to test whether historical rainfall at a site predicts 
   mortality, and whether historical rainfall at a site predicts the effect of 
   press drought on mortality. 
+```{r}
+mod_dead_2 <- glmer(Dead ~ MAR*Drought + (1 | Population) + (1 | Block), 
+                 data = harvest, 
+                 family = binomial)
+summary(mod_dead_2) # model nearly unidentifiable: very large eigenvalue
+# MAR has sig positive effect on death
+```
+
+```{r}
+plot(ggpredict(mod_dead_2, terms = c("MAR", "Drought")))
+# increased MAR increases the mortality of seedlings, regardless of treatment
+# but this happens equally for drought vs. control treatment
+plot_model(mod_dead_2, type = "re")
+# no difference across populations, suspiciously so?
+# again, does seem like some differences in block for mortality - suspicious
+```
   
 Finally, set up models to test whether historical evapotranspiration at a site 
   predicts mortality, and whether historical evapotranspiration at a site predicts 
   the effect of press drought on mortality. 
+```{r}
+mod_dead_3 <- glmer(Dead ~ MET * Drought + (1 | Population) + (1 | Block), 
+                 data = harvest, 
+                 family = binomial)
+summary(mod_dead_3) # model failed to converge?
+```
+
+```{r}
+plot(ggpredict(mod_dead_3, terms = c("MET", "Drought")))
+# does seem that increased MAT leads to increased mortality, and that the slope
+# of this relationship is different between control and drought treatments, but
+# this relationship is not statistically significant
+plot_model(mod_dead_3, type = "re")
+# no difference across populations, but yes sig difference in mortality across blocks
+```
 
 How do you interpret the results?
-
+- drought treatment increases mortality vs. control treatment
+- higher rainfall at source increases mortality, equally for control / drought
+- higher evapotranspiration at source does not impact mortality
+- no difference in mortality across source populations
+- see some impact of blocks in the greenhouse on mortality - not good!
 
 #3.
 
 Using the seedlings that were fated for the terminal drought experiment 
   (i.e., the seedlings that were not harvested), analyze how longevity during 
-  terminal drought is affected by the various potential predictors. Specifically, 
-  set up models to test whether populations vary in longevity, whether the press 
-  drought treatment affects longevity, and whether populations vary in how 
-  longevity is affected by the press drought treatment. 
+  terminal drought is affected by the various potential predictors. 
   
+subset for terminal drought seedlings
+```{r}
+drought <- ohia %>%
+  filter(Fate == "terminaldrought")
+```
+  
+Specifically, set up models to test whether populations vary in longevity, 
+  whether the press drought treatment affects longevity, and whether populations 
+  vary in how longevity is affected by the press drought treatment. 
+```{r}
+mod_long_1 <- lmer(Longevity ~ Drought + (Drought | Population) + (1| Block), 
+               data = drought)
+summary(mod_long_1)
+```
+
+```{r}
+plot(ggpredict(mod_long_1, terms = c("Drought")))
+# no differences in longevity in control vs. drought treatments
+plot_model(mod_long_1, type = "re")
+# no big difference in longevity for different populations
+# looks like D survived less time, A survived longer for block effects
+```
+
 Next, set up models to test whether historical rainfall at a site predicts 
   longevity, and whether historical rainfall at a site predicts the effect of 
   press drought on longevity.
-  
+```{r}
+mod_long_2 <- lmer(Longevity ~ MAR * Drought + (1 | Population) + (1 | Block), 
+                   data = drought)
+summary(mod_long_2)
+```
+
+```{r}
+plot(ggpredict(mod_long_2, terms = c("MAR", "Drought")))
+# increasing rainfall of source population decreases longevity of seedlings
+plot_model(mod_long_2, type = "re")
+# no big difference in longevity for different populations
+# looks like D survived less time, A survived longer for block effects
+```
+
 Finally, set up models to test whether historical evapotranspiration at a site 
   predicts longevity, and whether historical evapotranspiration at a site predicts 
   the effect of press drought on longevity. 
-  
+```{r}
+mod_long_3 <- lmer(Longevity ~ MET * Drought + (1|Population) + (1 | Block), 
+                   data = drought)
+summary(mod_long_3)
+```
+
+```{r}
+plot(ggpredict(mod_long_3, terms = c("MET", "Drought")))
+# increasing evapotransporation of source population decreases longevity of seedlings
+# this relationship appears same for both drought treatments
+plot_model(mod_long_3, type = "re")
+# big difference in longevity for different populations - PTAB, Manana1 high
+# no difference in block as random effect - why does this look diff from last model?
+```
+
 How do you interpret the results?
+- no differences in longevity for drought vs. control treatments
+- no big differences in longevity for different source populations
+- looks like block D survived less than others, while block A survived more
+- MAR appears to be driving longevity, increasing rainfall of source population
+  leads to decreased survival longevity in terminal drought experiment
+- MET also appears to be driving longevity (or at least correlated), increasing
+  evapotranspiration of source population leads to decreased survival longevity
+  in terminal drought experiment.
+
 
 
