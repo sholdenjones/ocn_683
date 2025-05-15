@@ -269,6 +269,3 @@ How do you interpret the results?
 - MET also appears to be driving longevity (or at least correlated), increasing
   evapotranspiration of source population leads to decreased survival longevity
   in terminal drought experiment.
-
-
-
